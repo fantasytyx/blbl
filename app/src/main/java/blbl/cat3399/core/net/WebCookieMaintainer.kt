@@ -1,6 +1,7 @@
 package blbl.cat3399.core.net
 
 import android.util.Base64
+import android.os.SystemClock
 import blbl.cat3399.core.log.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -142,15 +143,22 @@ object WebCookieMaintainer {
     }
 
     suspend fun ensureWebFingerprintCookies() {
+        val startMs = SystemClock.elapsedRealtime()
         val hasBuvid3 = !BiliClient.cookies.getCookieValue("buvid3").isNullOrBlank()
         val hasBNut = !BiliClient.cookies.getCookieValue("b_nut").isNullOrBlank()
-        if (!hasBuvid3 || !hasBNut) {
+        val needHomepage = !hasBuvid3 || !hasBNut
+        val hasBuvid4 = !BiliClient.cookies.getCookieValue("buvid4").isNullOrBlank()
+        val needSpi = !hasBuvid4
+        AppLog.i(TAG, "ensureWebFingerprintCookies enter needHomepage=$needHomepage needSpi=$needSpi")
+        if (needHomepage) {
+            val t0 = SystemClock.elapsedRealtime()
             runCatching { BiliClient.getBytes("https://www.bilibili.com/") }
                 .onFailure { AppLog.w(TAG, "ensureWebFingerprintCookies homepage failed", it) }
+            AppLog.i(TAG, "ensureWebFingerprintCookies homepage cost=${SystemClock.elapsedRealtime() - t0}ms")
         }
 
-        val hasBuvid4 = !BiliClient.cookies.getCookieValue("buvid4").isNullOrBlank()
-        if (!hasBuvid4) {
+        if (needSpi) {
+            val t0 = SystemClock.elapsedRealtime()
             runCatching {
                 val json = BiliClient.getJson("https://api.bilibili.com/x/frontend/finger/spi")
                 val data = json.optJSONObject("data") ?: JSONObject()
@@ -168,7 +176,9 @@ object WebCookieMaintainer {
             }.onFailure {
                 AppLog.w(TAG, "ensureWebFingerprintCookies finger/spi failed", it)
             }
+            AppLog.i(TAG, "ensureWebFingerprintCookies finger/spi cost=${SystemClock.elapsedRealtime() - t0}ms")
         }
+        AppLog.i(TAG, "ensureWebFingerprintCookies exit cost=${SystemClock.elapsedRealtime() - startMs}ms")
     }
 
     suspend fun ensureBiliTicket() {

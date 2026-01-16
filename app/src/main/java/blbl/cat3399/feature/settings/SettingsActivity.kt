@@ -190,6 +190,7 @@ class SettingsActivity : AppCompatActivity() {
             "播放设置" -> listOf(
                 SettingEntry("默认画质", qnText(prefs.playerPreferredQn), "按 B 站 qn 清晰度选择（DASH 走轨道 id）"),
                 SettingEntry("默认音轨", audioText(prefs.playerPreferredAudioId), "30280/30232/30216/30250/30251"),
+                SettingEntry("CDN线路", cdnText(prefs.playerCdnPreference), "优先选择匹配域名的播放 URL（匹配失败回退）"),
                 SettingEntry("默认播放速度", String.format(Locale.US, "%.2fx", prefs.playerSpeed), null),
                 SettingEntry("字幕语言", subtitleLangText(prefs.subtitlePreferredLang), "自动/优先匹配"),
                 SettingEntry("默认开启字幕", if (prefs.subtitleEnabledDefault) "开" else "关", "进入播放页时默认状态"),
@@ -445,6 +446,23 @@ class SettingsActivity : AppCompatActivity() {
                 ) { selected ->
                     val id = selected.substringBefore(" ").toIntOrNull()
                     if (id != null) prefs.playerPreferredAudioId = id
+                    refreshSection(entry.title)
+                }
+            }
+
+            "CDN线路" -> {
+                val options = listOf(
+                    blbl.cat3399.core.prefs.AppPrefs.PLAYER_CDN_BILIVIDEO to "bilivideo（默认）",
+                    blbl.cat3399.core.prefs.AppPrefs.PLAYER_CDN_MCDN to "mcdn（部分网络更快/更慢）",
+                )
+                showChoiceDialog(
+                    title = "CDN线路",
+                    items = options.map { it.second },
+                    current = cdnText(prefs.playerCdnPreference),
+                ) { selected ->
+                    val value = options.firstOrNull { it.second == selected }?.first
+                        ?: blbl.cat3399.core.prefs.AppPrefs.PLAYER_CDN_BILIVIDEO
+                    prefs.playerCdnPreference = value
                     refreshSection(entry.title)
                 }
             }
@@ -776,6 +794,11 @@ class SettingsActivity : AppCompatActivity() {
         blbl.cat3399.core.prefs.AppPrefs.UI_MODE_TV -> "开"
         blbl.cat3399.core.prefs.AppPrefs.UI_MODE_NORMAL -> "关"
         else -> "自动"
+    }
+
+    private fun cdnText(code: String): String = when (code) {
+        blbl.cat3399.core.prefs.AppPrefs.PLAYER_CDN_MCDN -> "mcdn"
+        else -> "bilivideo"
     }
 
     private fun qnText(qn: Int): String = when (qn) {

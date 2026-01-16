@@ -106,6 +106,10 @@ class AppPrefs(context: Context) {
         get() = prefs.getInt(KEY_PLAYER_AUDIO_ID, 30280)
         set(value) = prefs.edit().putInt(KEY_PLAYER_AUDIO_ID, value).apply()
 
+    var playerCdnPreference: String
+        get() = prefs.getString(KEY_PLAYER_CDN_PREFERENCE, PLAYER_CDN_BILIVIDEO) ?: PLAYER_CDN_BILIVIDEO
+        set(value) = prefs.edit().putString(KEY_PLAYER_CDN_PREFERENCE, value).apply()
+
     var subtitlePreferredLang: String
         get() = prefs.getString(KEY_SUBTITLE_LANG, "auto") ?: "auto"
         set(value) = prefs.edit().putString(KEY_SUBTITLE_LANG, value).apply()
@@ -213,6 +217,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_PREFERRED_QN = "player_preferred_qn"
         private const val KEY_PLAYER_CODEC = "player_codec"
         private const val KEY_PLAYER_AUDIO_ID = "player_audio_id"
+        private const val KEY_PLAYER_CDN_PREFERENCE = "player_cdn_preference"
         private const val KEY_SUBTITLE_LANG = "subtitle_lang"
         private const val KEY_SUBTITLE_ENABLED_DEFAULT = "subtitle_enabled_default"
         private const val KEY_PLAYER_SPEED = "player_speed"
@@ -226,6 +231,9 @@ class AppPrefs(context: Context) {
         // PC browser UA is used to reduce CDN 403 for media resources.
         const val DEFAULT_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+
+        const val PLAYER_CDN_BILIVIDEO = "bilivideo"
+        const val PLAYER_CDN_MCDN = "mcdn"
 
         private fun generateBuvid(): String {
             val bytes = ByteArray(16)

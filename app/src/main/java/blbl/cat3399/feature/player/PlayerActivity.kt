@@ -22,6 +22,8 @@ import androidx.media3.ui.SubtitleView
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime
 import androidx.media3.exoplayer.mediacodec.MediaCodecUtil
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
@@ -33,6 +35,7 @@ import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.DanmakuShield
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -93,6 +96,24 @@ class PlayerActivity : AppCompatActivity() {
     private var decodeFallbackAttempted: Boolean = false
     private var lastPickedDash: Playable.Dash? = null
 
+    private class PlaybackTrace(private val id: String) {
+        private val startMs = SystemClock.elapsedRealtime()
+        private var lastMs = startMs
+
+        fun log(stage: String, extra: String = "") {
+            val now = SystemClock.elapsedRealtime()
+            val total = now - startMs
+            val delta = now - lastMs
+            lastMs = now
+            val suffix = if (extra.isBlank()) "" else " $extra"
+            // Keep tag consistent with existing Player logs; AppLog already prefixes with "BLBL/".
+            AppLog.i("Player", "traceId=$id +${total}ms (+${delta}ms) $stage$suffix")
+        }
+    }
+
+    private var trace: PlaybackTrace? = null
+    private var traceFirstFrameLogged: Boolean = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityPlayerBinding.inflate(layoutInflater)
@@ -103,11 +124,20 @@ class PlayerActivity : AppCompatActivity() {
         binding.bottomBar.visibility = View.GONE
         binding.tvSeekHint.visibility = View.GONE
         binding.btnBack.setOnClickListener { finish() }
+        binding.tvOnline.text = "-人正在观看"
 
         val bvid = intent.getStringExtra(EXTRA_BVID).orEmpty()
         val cidExtra = intent.getLongExtra(EXTRA_CID, -1L).takeIf { it > 0 }
         val epIdExtra = intent.getLongExtra(EXTRA_EP_ID, -1L).takeIf { it > 0 }
         val aidExtra = intent.getLongExtra(EXTRA_AID, -1L).takeIf { it > 0 }
+        trace =
+            PlaybackTrace(
+                buildString {
+                    append(bvid.takeLast(8).ifBlank { "unknown" })
+                    append('-')
+                    append((System.currentTimeMillis() and 0xFFFF).toString(16))
+                },
+            ).also { it.log("activity:onCreate") }
         if (bvid.isBlank()) {
             Toast.makeText(this, "缺少 bvid", Toast.LENGTH_SHORT).show()
             finish()
@@ -140,6 +170,7 @@ class PlayerActivity : AppCompatActivity() {
         val exo = ExoPlayer.Builder(this).build()
         player = exo
         binding.playerView.player = exo
+        trace?.log("exo:created")
         binding.danmakuView.setPositionProvider { exo.currentPosition }
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
         configureSubtitleView()
@@ -149,6 +180,7 @@ class PlayerActivity : AppCompatActivity() {
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 AppLog.e("Player", "onPlayerError", error)
+                trace?.log("exo:error", "type=${error.errorCodeName}")
                 val picked = lastPickedDash
                 if (
                     picked != null &&
@@ -175,10 +207,27 @@ class PlayerActivity : AppCompatActivity() {
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 updateProgressUi()
+                val state =
+                    when (playbackState) {
+                        Player.STATE_IDLE -> "IDLE"
+                        Player.STATE_BUFFERING -> "BUFFERING"
+                        Player.STATE_READY -> "READY"
+                        Player.STATE_ENDED -> "ENDED"
+                        else -> playbackState.toString()
+                    }
+                trace?.log("exo:state", "state=$state pos=${exo.currentPosition}ms")
             }
 
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
                 requestDanmakuSegmentsForPosition(newPosition.positionMs, immediate = true)
+            }
+
+        })
+        exo.addAnalyticsListener(object : AnalyticsListener {
+            override fun onRenderedFirstFrame(eventTime: EventTime, output: Any, renderTimeMs: Long) {
+                if (traceFirstFrameLogged) return
+                traceFirstFrameLogged = true
+                trace?.log("exo:firstFrame", "pos=${exo.currentPosition}ms")
             }
         })
 
@@ -216,8 +265,10 @@ class PlayerActivity : AppCompatActivity() {
 
         lifecycleScope.launch(uncaughtHandler) {
             try {
+                trace?.log("view:start")
                 val viewJson = async(Dispatchers.IO) { runCatching { BiliApi.view(bvid) }.getOrNull() }
                 val viewData = viewJson.await()?.optJSONObject("data") ?: JSONObject()
+                trace?.log("view:done")
                 val title = viewData.optString("title", "")
                 if (title.isNotBlank()) binding.tvTitle.text = title
 
@@ -226,26 +277,48 @@ class PlayerActivity : AppCompatActivity() {
                 currentAid = currentAid ?: aid
                 currentCid = cid
                 AppLog.i("Player", "start bvid=$bvid cid=$cid")
+                trace?.log("cid:resolved", "cid=$cid aid=${aid ?: -1}")
+
+                requestOnlineWatchingText(bvid = bvid, cid = cid)
 
                 val playJob =
                     async {
                         val (qn, fnval) = playUrlParamsForSession()
+                        trace?.log("playurl:start", "qn=$qn fnval=$fnval")
                         requestPlayUrlWithFallback(bvid = bvid, cid = cid, epId = currentEpId, qn = qn, fnval = fnval)
+                            .also { trace?.log("playurl:done") }
                     }
-                val dmJob = async(Dispatchers.IO) { prepareDanmakuMeta(cid, currentAid ?: aid) }
-                val subJob = async(Dispatchers.IO) { prepareSubtitleConfig(viewData, bvid, cid) }
+                val dmJob =
+                    async(Dispatchers.IO) {
+                        trace?.log("danmakuMeta:start")
+                        prepareDanmakuMeta(cid, currentAid ?: aid, trace)
+                            .also { trace?.log("danmakuMeta:done", "segTotal=${it.segmentTotal} segMs=${it.segmentSizeMs}") }
+                    }
+                val subJob =
+                    async(Dispatchers.IO) {
+                        trace?.log("subtitle:start")
+                        prepareSubtitleConfig(viewData, bvid, cid, trace)
+                            .also { trace?.log("subtitle:done", "ok=${it != null}") }
+                    }
 
+                trace?.log("playurl:await")
                 val playJson = playJob.await()
+                trace?.log("playurl:awaitDone")
                 showRiskControlBypassHintIfNeeded(playJson)
                 lastAvailableQns = parseDashVideoQnList(playJson)
                 playbackConstraints = PlaybackConstraints()
                 decodeFallbackAttempted = false
                 lastPickedDash = null
+                trace?.log("pickPlayable:start")
                 val playable = pickPlayable(playJson, playbackConstraints)
+                trace?.log("pickPlayable:done", "kind=${playable.javaClass.simpleName}")
+                trace?.log("subtitle:await")
                 subtitleConfig = subJob.await()
+                trace?.log("subtitle:awaitDone", "ok=${subtitleConfig != null}")
                 subtitleAvailable = subtitleConfig != null
                 (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
                 applySubtitleEnabled(exo)
+                trace?.log("exo:setMediaSource:start")
                 when (playable) {
                     is Playable.Dash -> {
                         lastPickedDash = playable
@@ -262,11 +335,16 @@ class PlayerActivity : AppCompatActivity() {
                         exo.setMediaSource(buildProgressive(okHttpFactory, playable.url, subtitleConfig))
                     }
                 }
+                trace?.log("exo:setMediaSource:done")
+                trace?.log("exo:prepare")
                 exo.prepare()
+                trace?.log("exo:playWhenReady")
                 exo.playWhenReady = true
                 updateSubtitleButton()
 
+                trace?.log("danmakuMeta:await")
                 val dmMeta = dmJob.await()
+                trace?.log("danmakuMeta:awaitDone")
                 applyDanmakuMeta(dmMeta)
                 requestDanmakuSegmentsForPosition(exo.currentPosition.coerceAtLeast(0L), immediate = true)
             } catch (t: Throwable) {
@@ -275,6 +353,32 @@ class PlayerActivity : AppCompatActivity() {
                     Toast.makeText(this@PlayerActivity, "加载播放信息失败：${t.message}", Toast.LENGTH_LONG).show()
                 }
             }
+        }
+    }
+
+    private fun requestOnlineWatchingText(bvid: String, cid: Long) {
+        // Must not crash the player: always swallow any network/parse errors.
+        binding.tvOnline.text = "-人正在观看"
+        lifecycleScope.launch {
+            val countText =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        val json = BiliApi.onlineTotal(bvid = bvid, cid = cid)
+                        if (json.optInt("code", 0) != 0) return@runCatching "-"
+                        val data = json.optJSONObject("data") ?: return@runCatching "-"
+                        val showSwitch = data.optJSONObject("show_switch") ?: JSONObject()
+                        val totalEnabled = showSwitch.optBoolean("total", true)
+                        val total = data.optString("total", "")
+                        val countEnabled = showSwitch.optBoolean("count", true)
+                        val count = data.optString("count", "")
+                        when {
+                            totalEnabled && total.isNotBlank() -> total
+                            countEnabled && count.isNotBlank() -> count
+                            else -> "-"
+                        }
+                    }.getOrDefault("-")
+                }
+            binding.tvOnline.text = "${countText}人正在观看"
         }
     }
 
@@ -938,6 +1042,42 @@ class PlayerActivity : AppCompatActivity() {
         )
     }
 
+    private fun selectCdnUrlFromTrack(obj: JSONObject, preference: String): String {
+        val candidates = buildList {
+            val base =
+                obj.optString("baseUrl", obj.optString("base_url", obj.optString("url", "")))
+                    .trim()
+            if (base.isNotBlank()) add(base)
+            val backup = obj.optJSONArray("backupUrl") ?: obj.optJSONArray("backup_url") ?: JSONArray()
+            for (i in 0 until backup.length()) {
+                val u = backup.optString(i, "").trim()
+                if (u.isNotBlank()) add(u)
+            }
+        }.distinct()
+        if (candidates.isEmpty()) return ""
+
+        fun hostOf(url: String): String =
+            runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("").lowercase(Locale.US)
+
+        fun isMcdn(url: String): Boolean {
+            val host = hostOf(url)
+            return host.contains("mcdn") && host.contains("bilivideo")
+        }
+
+        fun isBilivideo(url: String): Boolean {
+            val host = hostOf(url)
+            return host.contains("bilivideo") && !isMcdn(url)
+        }
+
+        val picked =
+            when (preference) {
+                AppPrefs.PLAYER_CDN_MCDN -> candidates.firstOrNull(::isMcdn)
+                AppPrefs.PLAYER_CDN_BILIVIDEO -> candidates.firstOrNull(::isBilivideo)
+                else -> null
+            }
+        return picked ?: candidates.first()
+    }
+
     private suspend fun pickPlayable(json: JSONObject, constraints: PlaybackConstraints): Playable {
         val data = json.optJSONObject("data") ?: json.optJSONObject("result") ?: JSONObject()
         val vVoucher = data.optString("v_voucher", "").trim()
@@ -952,7 +1092,7 @@ class PlayerActivity : AppCompatActivity() {
             val flac = dash.optJSONObject("flac")
 
             fun baseUrl(obj: JSONObject): String =
-                obj.optString("baseUrl", obj.optString("base_url", obj.optString("url", "")))
+                selectCdnUrlFromTrack(obj, preference = BiliClient.prefs.playerCdnPreference)
 
             val preferCodecid = when (session.preferCodec) {
                 "HEVC" -> 12
@@ -1088,7 +1228,13 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         // Fallback: try durl (progressive) if dash missing.
-        val url = data.optJSONArray("durl")?.optJSONObject(0)?.optString("url").orEmpty()
+        val durlObj = data.optJSONArray("durl")?.optJSONObject(0)
+        val url =
+            if (durlObj != null) {
+                selectCdnUrlFromTrack(durlObj, preference = BiliClient.prefs.playerCdnPreference)
+            } else {
+                ""
+            }
         if (url.isNotBlank()) return Playable.Progressive(url)
 
         val cid = currentCid.takeIf { it > 0 }
@@ -1098,7 +1244,13 @@ class PlayerActivity : AppCompatActivity() {
         // Extra fallback: request MP4 directly (avoid deprecated fnval=0).
         val fallbackJson = requestPlayUrlWithFallback(bvid = bvid, cid = cid, epId = currentEpId, qn = 127, fnval = 1)
         val fallbackData = fallbackJson.optJSONObject("data") ?: fallbackJson.optJSONObject("result") ?: JSONObject()
-        val fallbackUrl = fallbackData.optJSONArray("durl")?.optJSONObject(0)?.optString("url").orEmpty()
+        val fallbackObj = fallbackData.optJSONArray("durl")?.optJSONObject(0)
+        val fallbackUrl =
+            if (fallbackObj != null) {
+                selectCdnUrlFromTrack(fallbackObj, preference = BiliClient.prefs.playerCdnPreference)
+            } else {
+                ""
+            }
         if (fallbackUrl.isNotBlank()) return Playable.Progressive(fallbackUrl)
 
         error("No playable url in playurl response")
@@ -1385,14 +1537,27 @@ class PlayerActivity : AppCompatActivity() {
             .show()
     }
 
-    private suspend fun prepareSubtitleConfig(viewData: JSONObject, bvid: String, cid: Long): MediaItem.SubtitleConfiguration? {
-        val items = fetchSubtitleItems(viewData, bvid, cid)
+    private suspend fun prepareSubtitleConfig(
+        viewData: JSONObject,
+        bvid: String,
+        cid: Long,
+        trace: PlaybackTrace?,
+    ): MediaItem.SubtitleConfiguration? {
+        trace?.log("subtitle:items:start")
+        val items = fetchSubtitleItems(viewData, bvid, cid, trace)
+        trace?.log("subtitle:items:done", "count=${items.size}")
         subtitleItems = items
         val chosen = pickSubtitleItem(items) ?: return null
-        return buildSubtitleConfigFromItem(chosen, bvid, cid)
+        trace?.log("subtitle:download:start", "lan=${chosen.lan}")
+        return buildSubtitleConfigFromItem(chosen, bvid, cid, trace)
     }
 
-    private suspend fun buildSubtitleConfigFromItem(item: SubtitleItem, bvid: String, cid: Long): MediaItem.SubtitleConfiguration? {
+    private suspend fun buildSubtitleConfigFromItem(
+        item: SubtitleItem,
+        bvid: String,
+        cid: Long,
+        trace: PlaybackTrace? = null,
+    ): MediaItem.SubtitleConfiguration? {
         val subtitleJson = runCatching { BiliClient.getJson(item.url) }.getOrNull() ?: return null
         val body = subtitleJson.optJSONArray("body") ?: subtitleJson.optJSONObject("data")?.optJSONArray("body") ?: return null
 
@@ -1402,6 +1567,7 @@ class PlayerActivity : AppCompatActivity() {
         val safeLan = item.lan.replace(Regex("[^a-zA-Z0-9_-]"), "_")
         val file = File(cacheDir, "sub_${bvid}_${cid}_${safeLan}.vtt")
         runCatching { file.writeText(vtt, Charsets.UTF_8) }.getOrElse { return null }
+        trace?.log("subtitle:download:done", "vttBytes=${vtt.toByteArray(Charsets.UTF_8).size}")
 
         return MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(file))
             .setMimeType(MimeTypes.TEXT_VTT)
@@ -1410,8 +1576,15 @@ class PlayerActivity : AppCompatActivity() {
             .build()
     }
 
-    private suspend fun fetchSubtitleItems(viewData: JSONObject, bvid: String, cid: Long): List<SubtitleItem> {
+    private suspend fun fetchSubtitleItems(
+        viewData: JSONObject,
+        bvid: String,
+        cid: Long,
+        trace: PlaybackTrace?,
+    ): List<SubtitleItem> {
+        trace?.log("subtitle:playerWbiV2:start")
         val playerJson = runCatching { BiliApi.playerWbiV2(bvid = bvid, cid = cid) }.getOrNull()
+        trace?.log("subtitle:playerWbiV2:done", "ok=${playerJson != null}")
         val data = playerJson?.optJSONObject("data")
         val needLogin = data?.optBoolean("need_login_subtitle") ?: false
         val list = data?.optJSONObject("subtitle")?.optJSONArray("subtitles") ?: JSONArray()
@@ -1580,14 +1753,20 @@ class PlayerActivity : AppCompatActivity() {
         val segmentSizeMs: Int,
     )
 
-    private suspend fun prepareDanmakuMeta(cid: Long, aid: Long?): DanmakuMeta {
+    private suspend fun prepareDanmakuMeta(cid: Long, aid: Long?, trace: PlaybackTrace? = null): DanmakuMeta {
+        trace?.log("danmakuMeta:prepare:start", "cid=$cid aid=${aid ?: -1}")
         return withContext(Dispatchers.IO) {
             val prefs = BiliClient.prefs
             val followBili = prefs.danmakuFollowBiliShield
             val dmView = if (followBili && BiliClient.cookies.hasSessData()) {
+                val t0 = SystemClock.elapsedRealtime()
                 runCatching { BiliApi.dmWebView(cid, aid) }
                     .onFailure { AppLog.w("Player", "dmWebView failed: ${it.message}") }
                     .getOrNull()
+                    .also {
+                        val cost = SystemClock.elapsedRealtime() - t0
+                        trace?.log("danmakuMeta:dmWebView", "ok=${it != null} cost=${cost}ms")
+                    }
             } else {
                 null
             }
@@ -1607,7 +1786,9 @@ class PlayerActivity : AppCompatActivity() {
                 "Player",
                 "danmaku cid=$cid segTotal=$segmentTotal segSizeMs=$segmentSizeMs followBili=$followBili hasDmSetting=${setting != null}",
             )
-            DanmakuMeta(shield = shield, segmentTotal = segmentTotal, segmentSizeMs = segmentSizeMs)
+            DanmakuMeta(shield = shield, segmentTotal = segmentTotal, segmentSizeMs = segmentSizeMs).also {
+                trace?.log("danmakuMeta:prepare:done")
+            }
         }
     }
 
