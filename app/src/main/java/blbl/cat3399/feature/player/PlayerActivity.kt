@@ -1077,12 +1077,6 @@ class PlayerActivity : AppCompatActivity() {
             playNext(userInitiated = true)
             setControlsVisible(true)
         }
-        binding.btnRew.setOnClickListener {
-            smartSeek(direction = -1, showControls = true, hintKind = SeekHintKind.Step)
-        }
-        binding.btnFfwd.setOnClickListener {
-            smartSeek(direction = +1, showControls = true, hintKind = SeekHintKind.Step)
-        }
 
         binding.btnDanmaku.setOnClickListener {
             session = session.copy(danmaku = session.danmaku.copy(enabled = !session.danmaku.enabled))
@@ -2644,19 +2638,44 @@ class PlayerActivity : AppCompatActivity() {
         }
 
         val controlSize = px(if (tvMode) R.dimen.player_control_button_size_tv else R.dimen.player_control_button_size)
+        val subtitleHeight =
+            px(if (tvMode) R.dimen.player_control_button_height_subtitle_tv else R.dimen.player_control_button_height_subtitle)
+        val settingsSize =
+            px(if (tvMode) R.dimen.player_control_button_size_settings_tv else R.dimen.player_control_button_size_settings)
         val controlPad = px(if (tvMode) R.dimen.player_control_button_padding_tv else R.dimen.player_control_button_padding)
-        listOf(
-            binding.btnPrev,
-            binding.btnPlayPause,
-            binding.btnNext,
-            binding.btnRew,
-            binding.btnFfwd,
-            binding.btnSubtitle,
-            binding.btnDanmaku,
-            binding.btnAdvanced,
-        ).forEach { btn ->
-            setSize(btn, controlSize, controlSize)
+        listOf(binding.btnSubtitle, binding.btnDanmaku).forEach { btn ->
+            setSize(btn, controlSize, subtitleHeight)
             btn.setPadding(controlPad, controlPad, controlPad, controlPad)
+        }
+        run {
+            val btn = binding.btnAdvanced
+            setSize(btn, settingsSize, settingsSize)
+            btn.setPadding(controlPad, controlPad, controlPad, controlPad)
+        }
+        if (tvMode) {
+            fun setEndMargin(view: View, marginEndPx: Int) {
+                val lp = view.layoutParams as? MarginLayoutParams ?: return
+                if (lp.marginEnd == marginEndPx) return
+                lp.marginEnd = marginEndPx
+                view.layoutParams = lp
+            }
+
+            val transportSize = px(R.dimen.player_control_button_size_main_tv)
+            val playSize = px(R.dimen.player_control_button_size_main_play_tv)
+            val transportPad = px(R.dimen.player_control_button_padding_main_tv)
+            val gap = px(R.dimen.player_control_button_gap_tv)
+
+            setSize(binding.btnPrev, transportSize, transportSize)
+            binding.btnPrev.setPadding(transportPad, transportPad, transportPad, transportPad)
+            setEndMargin(binding.btnPrev, gap)
+
+            setSize(binding.btnPlayPause, playSize, playSize)
+            binding.btnPlayPause.setPadding(transportPad, transportPad, transportPad, transportPad)
+            setEndMargin(binding.btnPlayPause, gap)
+
+            setSize(binding.btnNext, transportSize, transportSize)
+            binding.btnNext.setPadding(transportPad, transportPad, transportPad, transportPad)
+            setEndMargin(binding.btnNext, gap)
         }
 
         binding.tvTime.setTextSize(

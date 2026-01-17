@@ -51,33 +51,39 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
-        <TextView
-            android:id="@+id/tv_title"
+        <LinearLayout
+            android:id="@+id/title_row"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="@dimen/player_title_margin_start"
-            android:layout_marginEnd="@dimen/player_title_margin_end"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@color/blbl_text"
-            android:textSize="@dimen/player_title_text_size"
-            app:layout_constraintBottom_toBottomOf="@id/btn_back"
-            app:layout_constraintEnd_toStartOf="@id/tv_online"
-            app:layout_constraintStart_toEndOf="@id/btn_back"
-            app:layout_constraintTop_toTopOf="@id/btn_back" />
-
-        <TextView
-            android:id="@+id/tv_online"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:text="-人正在观看"
-            android:textColor="@color/blbl_text_secondary"
-            android:textSize="@dimen/player_online_text_size"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             app:layout_constraintBottom_toBottomOf="@id/btn_back"
             app:layout_constraintEnd_toStartOf="@id/btn_settings"
-            app:layout_constraintTop_toTopOf="@id/btn_back" />
+            app:layout_constraintStart_toEndOf="@id/btn_back"
+            app:layout_constraintTop_toTopOf="@id/btn_back">
+
+            <TextView
+                android:id="@+id/tv_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/player_title_margin_start"
+                android:layout_marginEnd="@dimen/player_title_margin_end"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textColor="@color/blbl_text"
+                android:textSize="@dimen/player_title_text_size" />
+
+            <TextView
+                android:id="@+id/tv_online"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="-人正在观看"
+                android:textColor="@color/blbl_text_secondary"
+                android:textSize="@dimen/player_online_text_size" />
+        </LinearLayout>
 
         <ImageButton
             android:id="@+id/btn_settings"
@@ -137,68 +143,48 @@
 
             <ImageButton
                 android:id="@+id/btn_prev"
-                android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
+                android:layout_width="@dimen/player_control_button_size_main"
+                android:layout_height="@dimen/player_control_button_size_main"
+                android:layout_marginEnd="@dimen/player_control_button_gap"
                 android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
-                android:padding="@dimen/player_control_button_padding"
+                android:padding="@dimen/player_control_button_padding_main"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_player_prev"
                 android:tint="@color/blbl_text" />
 
             <ImageButton
                 android:id="@+id/btn_play_pause"
-                android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
+                android:layout_width="@dimen/player_control_button_size_main_play"
+                android:layout_height="@dimen/player_control_button_size_main_play"
+                android:layout_marginEnd="@dimen/player_control_button_gap"
                 android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
-                android:padding="@dimen/player_control_button_padding"
+                android:padding="@dimen/player_control_button_padding_main"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_player_play"
                 android:tint="@color/blbl_text" />
 
             <ImageButton
                 android:id="@+id/btn_next"
-                android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
+                android:layout_width="@dimen/player_control_button_size_main"
+                android:layout_height="@dimen/player_control_button_size_main"
+                android:layout_marginEnd="@dimen/player_control_button_gap"
                 android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
-                android:padding="@dimen/player_control_button_padding"
+                android:padding="@dimen/player_control_button_padding_main"
                 android:scaleType="fitCenter"
                 android:src="@drawable/ic_player_next"
                 android:tint="@color/blbl_text" />
 
             <ImageButton
-                android:id="@+id/btn_rew"
-                android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
-                android:background="@drawable/blbl_focus_bg_round"
-                android:contentDescription="@string/app_name"
-                android:focusable="true"
-                android:padding="@dimen/player_control_button_padding"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_player_rewind"
-                android:tint="@color/blbl_text" />
-
-            <ImageButton
-                android:id="@+id/btn_ffwd"
-                android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
-                android:background="@drawable/blbl_focus_bg_round"
-                android:contentDescription="@string/app_name"
-                android:focusable="true"
-                android:padding="@dimen/player_control_button_padding"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_player_fastforward"
-                android:tint="@color/blbl_text" />
-
-            <ImageButton
                 android:id="@+id/btn_subtitle"
                 android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
+                android:layout_height="@dimen/player_control_button_height_subtitle"
+                android:layout_marginEnd="@dimen/player_control_button_gap"
                 android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
@@ -210,7 +196,8 @@
             <ImageButton
                 android:id="@+id/btn_danmaku"
                 android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
+                android:layout_height="@dimen/player_control_button_height_subtitle"
+                android:layout_marginEnd="@dimen/player_control_button_gap"
                 android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
@@ -221,8 +208,8 @@
 
             <ImageButton
                 android:id="@+id/btn_advanced"
-                android:layout_width="@dimen/player_control_button_size"
-                android:layout_height="@dimen/player_control_button_size"
+                android:layout_width="@dimen/player_control_button_size_settings"
+                android:layout_height="@dimen/player_control_button_size_settings"
                 android:background="@drawable/blbl_focus_bg_round"
                 android:contentDescription="@string/app_name"
                 android:focusable="true"
