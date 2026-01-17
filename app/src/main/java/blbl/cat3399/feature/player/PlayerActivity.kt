@@ -1097,10 +1097,15 @@ class PlayerActivity : AppCompatActivity() {
                     if (!fromUser) return
                     scrubbing = true
                     noteUserInteraction()
-                    scheduleKeyScrubEnd()
+                    if (seekBar?.isPressed != true) scheduleKeyScrubEnd()
 
-                    if (binding.seekProgress.isFocused) {
-                        val duration = exo.duration.takeIf { it > 0 } ?: return
+                    val duration = exo.duration.takeIf { it > 0 }
+                    if (duration != null) {
+                        val previewPos = (duration * progress) / SEEK_MAX
+                        binding.tvTime.text = "${formatHms(previewPos)} / ${formatHms(duration)}"
+                    }
+
+                    if (binding.seekProgress.isFocused && duration != null) {
                         val seekTo = duration * progress / SEEK_MAX
                         exo.seekTo(seekTo)
                     }
@@ -1108,6 +1113,7 @@ class PlayerActivity : AppCompatActivity() {
 
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {
                     scrubbing = true
+                    keyScrubEndJob?.cancel()
                     setControlsVisible(true)
                 }
 
@@ -1116,8 +1122,10 @@ class PlayerActivity : AppCompatActivity() {
                     val progress = seekBar?.progress ?: return
                     val seekTo = duration * progress / SEEK_MAX
                     exo.seekTo(seekTo)
+                    binding.tvTime.text = "${formatHms(seekTo)} / ${formatHms(duration)}"
                     requestDanmakuSegmentsForPosition(seekTo, immediate = true)
                     scrubbing = false
+                    keyScrubEndJob?.cancel()
                     setControlsVisible(true)
                 }
             },
@@ -1379,7 +1387,9 @@ class PlayerActivity : AppCompatActivity() {
         val duration = exo.duration.takeIf { it > 0 } ?: 0L
         val pos = exo.currentPosition.coerceAtLeast(0L)
 
-        binding.tvTime.text = "${formatHms(pos)} / ${formatHms(duration)}"
+        if (!scrubbing) {
+            binding.tvTime.text = "${formatHms(pos)} / ${formatHms(duration)}"
+        }
 
         val enabled = duration > 0
         binding.seekProgress.isEnabled = enabled
