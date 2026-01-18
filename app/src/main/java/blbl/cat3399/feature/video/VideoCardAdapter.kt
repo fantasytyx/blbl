@@ -139,6 +139,30 @@ class VideoCardAdapter(
             binding.tvDuration.setPadding(padH, padV, padH, padV)
             binding.llStats.setPadding(padH, padV, padH, padV)
 
+            run {
+                // "Closer to the left edge by 50%": the visible inset is (margin + inner padding),
+                // so shift left by 50% of that total inset (more noticeable than margin-only).
+                val insetX = textMargin + padH
+                val shiftX = -insetX * 0.5f
+                binding.llStats.translationX = shiftX
+                binding.tvDuration.translationX = shiftX
+
+                // "Move down 20%": apply 20% of overlay height (and a tiny baseline from margin)
+                // so the change is visible across different UI scales.
+                fun applyShiftY() {
+                    val overlayH = maxOf(binding.llStats.height, binding.tvDuration.height)
+                    val shiftY = (textMargin + padV) * 0.2f + overlayH * 0.2f
+                    binding.llStats.translationY = shiftY
+                    binding.tvDuration.translationY = shiftY
+                }
+
+                if (binding.llStats.height > 0 || binding.tvDuration.height > 0) {
+                    applyShiftY()
+                } else {
+                    binding.root.post { applyShiftY() }
+                }
+            }
+
             binding.tvDuration.setTextSize(
                 TypedValue.COMPLEX_UNIT_PX,
                 scaledPxF(if (tvMode) R.dimen.video_card_duration_text_size_tv else R.dimen.video_card_duration_text_size),
