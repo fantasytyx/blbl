@@ -2896,7 +2896,7 @@ class PlayerActivity : AppCompatActivity() {
         126 -> "杜比视界"
         127 -> "8K 超高清"
         129 -> "HDR Vivid"
-        else -> "qn $qn"
+        else -> qn.toString()
     }
 
     private fun playUrlParamsForSession(): Pair<Int, Int> {

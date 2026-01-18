@@ -765,7 +765,7 @@ class LivePlayerActivity : AppCompatActivity() {
             250 -> "超清"
             150 -> "高清"
             80 -> "流畅"
-            else -> "qn $qn"
+            else -> qn.toString()
         }
     }
 

@@ -140,12 +140,12 @@
 
     <!-- Player: top/bottom controls -->
     <dimen name="player_top_bar_padding_h">4.8dp</dimen>
-    <dimen name="player_top_bar_padding_v">6dp</dimen>
+    <dimen name="player_top_bar_padding_v">2dp</dimen>
     <dimen name="player_top_bar_padding_h_tv">10dp</dimen>
-    <dimen name="player_top_bar_padding_v_tv">10dp</dimen>
+    <dimen name="player_top_bar_padding_v_tv">2dp</dimen>
 
-    <dimen name="player_top_button_size">40dp</dimen>
-    <dimen name="player_top_button_size_tv">60dp</dimen>
+    <dimen name="player_top_button_size">36dp</dimen>
+    <dimen name="player_top_button_size_tv">50dp</dimen>
     <dimen name="player_top_button_padding">4dp</dimen>
     <dimen name="player_top_button_padding_tv">5dp</dimen>
 
@@ -159,8 +159,8 @@
     <dimen name="player_online_text_size">12sp</dimen>
     <dimen name="player_online_text_size_tv">16sp</dimen>
 
-    <dimen name="player_bottom_bar_padding_v">10dp</dimen>
-    <dimen name="player_bottom_bar_padding_v_tv">16dp</dimen>
+    <dimen name="player_bottom_bar_padding_v">4dp</dimen>
+    <dimen name="player_bottom_bar_padding_v_tv">8dp</dimen>
     <dimen name="player_seekbar_height">8dp</dimen>
     <dimen name="player_seekbar_height_tv">8dp</dimen>
     <dimen name="player_seekbar_margin_bottom">6dp</dimen>

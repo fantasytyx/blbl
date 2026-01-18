@@ -29,7 +29,7 @@
         android:id="@+id/top_bar"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:background="#44000000"
+        android:background="@color/player_overlay_bg"
         android:paddingHorizontal="@dimen/player_top_bar_padding_h"
         android:paddingVertical="@dimen/player_top_bar_padding_v"
         android:visibility="gone"
@@ -51,12 +51,10 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
-        <LinearLayout
+        <androidx.constraintlayout.widget.ConstraintLayout
             android:id="@+id/title_row"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
             app:layout_constraintBottom_toBottomOf="@id/btn_back"
             app:layout_constraintEnd_toStartOf="@id/btn_settings"
             app:layout_constraintStart_toEndOf="@id/btn_back"
@@ -68,22 +66,34 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="@dimen/player_title_margin_start"
                 android:layout_marginEnd="@dimen/player_title_margin_end"
-                android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:textColor="@color/blbl_text"
-                android:textSize="@dimen/player_title_text_size" />
+                android:textSize="@dimen/player_title_text_size"
+                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintEnd_toStartOf="@id/tv_online"
+                app:layout_constraintHorizontal_bias="0"
+                app:layout_constraintHorizontal_chainStyle="packed"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintTop_toTopOf="parent"
+                app:layout_constraintWidth_default="wrap" />
 
             <TextView
                 android:id="@+id/tv_online"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
+                android:translationY="2dp"
                 android:ellipsize="end"
                 android:maxLines="1"
                 android:text="-人正在观看"
                 android:textColor="@color/blbl_text_secondary"
-                android:textSize="@dimen/player_online_text_size" />
-        </LinearLayout>
+                android:textSize="@dimen/player_online_text_size"
+                app:layout_constraintBottom_toBottomOf="@id/tv_title"
+                app:layout_constraintEnd_toEndOf="parent"
+                app:layout_constraintStart_toEndOf="@id/tv_title"
+                app:layout_constraintTop_toTopOf="@id/tv_title" />
+        </androidx.constraintlayout.widget.ConstraintLayout>
 
         <ImageButton
             android:id="@+id/btn_settings"
@@ -253,7 +263,7 @@
         android:layout_marginStart="10dp"
         android:layout_marginTop="10dp"
         android:layout_marginEnd="10dp"
-        android:background="#66000000"
+        android:background="@color/player_overlay_bg"
         android:padding="10dp"
         android:textColor="@color/blbl_text"
         android:textSize="13sp"
@@ -268,7 +278,7 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="@dimen/player_seek_hint_margin_start"
         android:layout_marginBottom="@dimen/player_seek_hint_margin_bottom"
-        android:background="#66000000"
+        android:background="@color/player_overlay_bg"
         android:paddingHorizontal="@dimen/player_seek_hint_padding_h"
         android:paddingVertical="@dimen/player_seek_hint_padding_v"
         android:textColor="@color/blbl_text"

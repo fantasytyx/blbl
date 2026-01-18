@@ -8,4 +8,5 @@
     <color name="blbl_blue">#00A1D6</color>
     <color name="blbl_red">#FF4D4F</color>
     <color name="blbl_pink">#FB7299</color>
+    <color name="player_overlay_bg">#80000000</color>
 </resources>
