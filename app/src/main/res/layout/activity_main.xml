@@ -67,6 +67,8 @@
             android:background="@drawable/blbl_focus_bg_round"
             android:contentDescription="@string/tab_settings"
             android:focusable="true"
+            android:scaleType="fitCenter"
+            android:stateListAnimator="@animator/blbl_focus_scale"
             android:padding="@dimen/sidebar_settings_padding"
             android:src="@drawable/ic_nav_settings"
             android:tint="@color/blbl_text_secondary" />
