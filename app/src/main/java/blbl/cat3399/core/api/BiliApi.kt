@@ -1611,6 +1611,30 @@ object BiliApi {
         return BiliClient.getJson(url)
     }
 
+    suspend fun seasonsArchivesList(
+        mid: Long,
+        seasonId: Long,
+        pageNum: Int = 1,
+        pageSize: Int = 200,
+        sortReverse: Boolean = false,
+    ): JSONObject {
+        val safeMid = mid.takeIf { it > 0 } ?: error("mid required")
+        val safeSeasonId = seasonId.takeIf { it > 0 } ?: error("seasonId required")
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/polymer/web-space/seasons_archives_list",
+                mapOf(
+                    "mid" to safeMid.toString(),
+                    "season_id" to safeSeasonId.toString(),
+                    "sort_reverse" to sortReverse.toString(),
+                    "page_num" to pageNum.toString(),
+                    "page_size" to pageSize.toString(),
+                    "web_location" to "333.999",
+                ),
+            )
+        return BiliClient.getJson(url, headers = piliWebHeaders(targetUrl = url, includeCookie = true), noCookies = true)
+    }
+
     suspend fun onlineTotal(bvid: String, cid: Long): JSONObject {
         val url = BiliClient.withQuery(
             "https://api.bilibili.com/x/player/online/total",

@@ -138,6 +138,8 @@ class PlayerActivity : AppCompatActivity() {
     private var playlistToken: String? = null
     private var playlistItems: List<PlayerPlaylistItem> = emptyList()
     private var playlistIndex: Int = -1
+    private var playlistUgcSeasonId: Long? = null
+    private var playlistUgcSeasonTitle: String? = null
     private lateinit var session: PlayerSessionSettings
     private var subtitleAvailabilityKnown: Boolean = false
     private var subtitleAvailable: Boolean = false
@@ -601,6 +603,7 @@ class PlayerActivity : AppCompatActivity() {
             return
         }
 
+        val title = playlistUgcSeasonTitle?.let { "合集：$it" } ?: "播放列表"
         val labels =
             list.mapIndexed { index, item ->
                 item.title?.trim()?.takeIf { it.isNotBlank() }
@@ -609,13 +612,117 @@ class PlayerActivity : AppCompatActivity() {
 
         SingleChoiceDialog.show(
             context = this,
-            title = "播放列表",
+            title = title,
             items = labels,
             checkedIndex = playlistIndex,
             negativeText = "关闭",
         ) { which, _ ->
             if (which != playlistIndex) playPlaylistIndex(which)
         }
+    }
+
+    private fun parseUgcSeasonPlaylistFromView(ugcSeason: JSONObject): List<PlayerPlaylistItem> {
+        val sections = ugcSeason.optJSONArray("sections") ?: return emptyList()
+        val out = ArrayList<PlayerPlaylistItem>(ugcSeason.optInt("ep_count").coerceAtLeast(0))
+        for (i in 0 until sections.length()) {
+            val section = sections.optJSONObject(i) ?: continue
+            val eps = section.optJSONArray("episodes") ?: continue
+            for (j in 0 until eps.length()) {
+                val ep = eps.optJSONObject(j) ?: continue
+                val arc = ep.optJSONObject("arc") ?: JSONObject()
+                val bvid = ep.optString("bvid", "").trim().ifBlank { arc.optString("bvid", "").trim() }
+                if (bvid.isBlank()) continue
+                val cid = ep.optLong("cid").takeIf { it > 0 } ?: arc.optLong("cid").takeIf { it > 0 }
+                val aid = ep.optLong("aid").takeIf { it > 0 } ?: arc.optLong("aid").takeIf { it > 0 }
+                val title = ep.optString("title", "").trim().takeIf { it.isNotBlank() } ?: arc.optString("title", "").trim()
+                out.add(
+                    PlayerPlaylistItem(
+                        bvid = bvid,
+                        cid = cid,
+                        aid = aid,
+                        title = title.takeIf { it.isNotBlank() },
+                    ),
+                )
+            }
+        }
+        return out
+    }
+
+    private fun parseUgcSeasonPlaylistFromArchivesList(json: JSONObject): List<PlayerPlaylistItem> {
+        val archives = json.optJSONObject("data")?.optJSONArray("archives") ?: return emptyList()
+        val out = ArrayList<PlayerPlaylistItem>(archives.length())
+        for (i in 0 until archives.length()) {
+            val obj = archives.optJSONObject(i) ?: continue
+            val bvid = obj.optString("bvid", "").trim()
+            if (bvid.isBlank()) continue
+            val aid = obj.optLong("aid").takeIf { it > 0 }
+            val title = obj.optString("title", "").trim().takeIf { it.isNotBlank() }
+            out.add(
+                PlayerPlaylistItem(
+                    bvid = bvid,
+                    aid = aid,
+                    title = title,
+                ),
+            )
+        }
+        return out
+    }
+
+    private fun pickPlaylistIndexForCurrentMedia(list: List<PlayerPlaylistItem>, bvid: String, aid: Long?, cid: Long?): Int {
+        val safeBvid = bvid.trim()
+        if (safeBvid.isNotBlank()) {
+            val byBvid = list.indexOfFirst { it.bvid == safeBvid }
+            if (byBvid >= 0) return byBvid
+        }
+        if (aid != null && aid > 0) {
+            val byAid = list.indexOfFirst { it.aid == aid }
+            if (byAid >= 0) return byAid
+        }
+        if (cid != null && cid > 0) {
+            val byCid = list.indexOfFirst { it.cid == cid }
+            if (byCid >= 0) return byCid
+        }
+        return -1
+    }
+
+    private suspend fun maybeOverridePlaylistWithUgcSeason(viewData: JSONObject, bvid: String) {
+        val ugcSeason = viewData.optJSONObject("ugc_season") ?: return
+        val seasonId = ugcSeason.optLong("id").takeIf { it > 0 } ?: return
+        val seasonTitle = ugcSeason.optString("title", "").trim().takeIf { it.isNotBlank() }
+
+        fun apply(items: List<PlayerPlaylistItem>, index: Int) {
+            if (items.isEmpty() || index !in items.indices) return
+            playlistToken?.let(PlayerPlaylistStore::remove)
+            playlistToken = null
+            playlistItems = items
+            playlistIndex = index
+            playlistUgcSeasonId = seasonId
+            playlistUgcSeasonTitle = seasonTitle
+            updatePlaylistControls()
+        }
+
+        val aid = currentAid
+        val cid = currentCid.takeIf { it > 0 }
+
+        val itemsFromView = parseUgcSeasonPlaylistFromView(ugcSeason)
+        val idxFromView = pickPlaylistIndexForCurrentMedia(itemsFromView, bvid = bvid, aid = aid, cid = cid)
+        if (idxFromView >= 0) {
+            apply(itemsFromView, idxFromView)
+            return
+        }
+
+        val mid =
+            ugcSeason.optLong("mid").takeIf { it > 0 }
+                ?: viewData.optJSONObject("owner")?.optLong("mid")?.takeIf { it > 0 }
+                ?: return
+
+        val json =
+            withContext(Dispatchers.IO) {
+                runCatching { BiliApi.seasonsArchivesList(mid = mid, seasonId = seasonId, pageSize = 200) }.getOrNull()
+            } ?: return
+        val itemsFromApi = parseUgcSeasonPlaylistFromArchivesList(json)
+        val idxFromApi = pickPlaylistIndexForCurrentMedia(itemsFromApi, bvid = bvid, aid = aid, cid = cid)
+        if (idxFromApi >= 0) apply(itemsFromApi, idxFromApi)
     }
 
     private fun handlePlaybackEnded(exo: ExoPlayer) {
@@ -829,26 +936,30 @@ class PlayerActivity : AppCompatActivity() {
                 }
 
         loadJob =
-            lifecycleScope.launch(handler) {
-                try {
-                    trace?.log("view:start")
-                    val viewJson = async(Dispatchers.IO) { runCatching { BiliApi.view(safeBvid) }.getOrNull() }
-                    val viewData = viewJson.await()?.optJSONObject("data") ?: JSONObject()
-                    trace?.log("view:done")
-                    val title = viewData.optString("title", "")
-                    if (title.isNotBlank()) binding.tvTitle.text = title
-                    currentViewDurationMs = viewData.optLong("duration", -1L).takeIf { it > 0 }?.times(1000L)
-                    applyUpInfo(viewData)
-                    applyTitleMeta(viewData)
+        lifecycleScope.launch(handler) {
+            try {
+                trace?.log("view:start")
+                val viewJson = async(Dispatchers.IO) { runCatching { BiliApi.view(safeBvid) }.getOrNull() }
+                val viewData = viewJson.await()?.optJSONObject("data") ?: JSONObject()
+                trace?.log("view:done")
+                val title = viewData.optString("title", "")
+                if (title.isNotBlank()) binding.tvTitle.text = title
+                currentViewDurationMs = viewData.optLong("duration", -1L).takeIf { it > 0 }?.times(1000L)
+                applyUpInfo(viewData)
+                applyTitleMeta(viewData)
 
-                    val cid = cidExtra ?: viewData.optLong("cid").takeIf { it > 0 } ?: error("cid missing")
-                    val aid = viewData.optLong("aid").takeIf { it > 0 }
-                    currentAid = currentAid ?: aid
-                    currentCid = cid
-                    AppLog.i("Player", "start bvid=$safeBvid cid=$cid")
-                    trace?.log("cid:resolved", "cid=$cid aid=${aid ?: -1}")
+                val cid = cidExtra ?: viewData.optLong("cid").takeIf { it > 0 } ?: error("cid missing")
+                val aid = viewData.optLong("aid").takeIf { it > 0 }
+                currentAid = currentAid ?: aid
+                currentCid = cid
+                AppLog.i("Player", "start bvid=$safeBvid cid=$cid")
+                trace?.log("cid:resolved", "cid=$cid aid=${aid ?: -1}")
 
-                    requestOnlineWatchingText(bvid = safeBvid, cid = cid)
+                playlistUgcSeasonId = null
+                playlistUgcSeasonTitle = null
+                maybeOverridePlaylistWithUgcSeason(viewData, bvid = safeBvid)
+
+                requestOnlineWatchingText(bvid = safeBvid, cid = cid)
 
                     val playJob =
                         async {
