@@ -2,31 +2,31 @@ package blbl.cat3399.feature.player.danmaku
 
 import android.graphics.Paint
 import blbl.cat3399.core.model.Danmaku
+import java.util.Arrays
 import kotlin.math.max
 import kotlin.math.min
 
 class DanmakuEngine {
-    data class Active(
+    class Active(
         val danmaku: Danmaku,
         val lane: Int,
         val textWidth: Float,
         val pxPerMs: Float,
         val durationMs: Int,
         val startTimeMs: Int,
-    )
-
-    data class DrawItem(
-        val danmaku: Danmaku,
-        val x: Float,
-        val yTop: Float,
-        val textWidth: Float,
-    )
+    ) {
+        var x: Float = 0f
+        var yTop: Float = 0f
+    }
 
     private var danmakus: MutableList<Danmaku> = mutableListOf()
     private var index = 0
     private val active = ArrayList<Active>()
     private val pending = ArrayDeque<Pending>()
     private var lastNowMs: Int = 0
+    private val fontMetrics = Paint.FontMetrics()
+    private var laneLast: Array<Active?> = emptyArray()
+    private var laneLastTail: FloatArray = FloatArray(0)
 
     fun setDanmakus(list: List<Danmaku>) {
         danmakus = list.sortedBy { it.timeMs }.toMutableList()
@@ -147,7 +147,7 @@ class DanmakuEngine {
         area: Float,
         topInsetPx: Int,
         bottomInsetPx: Int,
-    ): List<DrawItem> {
+    ): List<Active> {
         // Make time monotonic within a session to avoid jitter removing/respawning items.
         val rawNowMs = positionMs.toInt()
         val nowMs = if (rawNowMs >= lastNowMs) rawNowMs else lastNowMs
@@ -157,8 +157,8 @@ class DanmakuEngine {
         val safeBottom = bottomInsetPx.coerceIn(0, height - safeTop)
         val availableHeight = (height - safeTop - safeBottom).coerceAtLeast(0)
         val outlinePad = outlinePaddingPx.coerceAtLeast(0f)
-        val fm = paint.fontMetrics
-        val textBoxHeight = (fm.descent - fm.ascent) + outlinePad * 2f
+        paint.getFontMetrics(fontMetrics)
+        val textBoxHeight = (fontMetrics.descent - fontMetrics.ascent) + outlinePad * 2f
         val laneHeight = max(18f, textBoxHeight * 1.15f)
         val usableHeight = (availableHeight * area).toInt().coerceAtLeast(0)
         val laneCount = max(1, (usableHeight / laneHeight).toInt())
@@ -172,8 +172,9 @@ class DanmakuEngine {
         val marginPx = max(12f, (paint.textSize + outlinePad * 2f) * 0.6f)
 
         // Build per-lane "last spawned" snapshot at current time.
-        val laneLast = arrayOfNulls<Active>(laneCount)
-        val laneLastTail = FloatArray(laneCount) { Float.NEGATIVE_INFINITY }
+        ensureLaneBuffers(laneCount)
+        Arrays.fill(laneLast, 0, laneCount, null)
+        Arrays.fill(laneLastTail, 0, laneCount, Float.NEGATIVE_INFINITY)
         for (a in active) {
             if (a.lane !in 0 until laneCount) continue
             val cur = laneLast[a.lane]
@@ -187,26 +188,25 @@ class DanmakuEngine {
             laneLastTail[lane] = x + a.textWidth
         }
 
-        fun trySpawn(d: Danmaku): Boolean {
+        fun trySpawn(d: Danmaku, textWidth: Float): Boolean {
             if (d.text.isBlank()) return true
-            val tw = paint.measureText(d.text) + outlinePad * 2f
-            val pxNew = (width + tw) / baseDurationMs.toFloat()
+            val pxNew = (width + textWidth) / baseDurationMs.toFloat()
 
             for (lane in 0 until laneCount) {
                 val prev = laneLast[lane]
                 if (prev == null) {
-                    val a = Active(d, lane, tw, pxNew, baseDurationMs, startTimeMs = nowMs)
+                    val a = Active(d, lane, textWidth, pxNew, baseDurationMs, startTimeMs = nowMs)
                     active.add(a)
                     laneLast[lane] = a
-                    laneLastTail[lane] = width.toFloat() + tw
+                    laneLastTail[lane] = width.toFloat() + textWidth
                     return true
                 }
                 val tailPrev = laneLastTail[lane]
                 if (isLaneAvailable(width.toFloat(), nowMs, prev, tailPrev, pxNew, marginPx)) {
-                    val a = Active(d, lane, tw, pxNew, baseDurationMs, startTimeMs = nowMs)
+                    val a = Active(d, lane, textWidth, pxNew, baseDurationMs, startTimeMs = nowMs)
                     active.add(a)
                     laneLast[lane] = a
-                    laneLastTail[lane] = width.toFloat() + tw
+                    laneLastTail[lane] = width.toFloat() + textWidth
                     return true
                 }
             }
@@ -215,29 +215,30 @@ class DanmakuEngine {
 
         // Retry pending danmakus first (delay a bit to avoid overlaps).
         if (pending.isNotEmpty()) {
-            val keep = ArrayDeque<Pending>(pending.size)
+            val pendingCount = pending.size
             var processed = 0
-            while (pending.isNotEmpty()) {
+            var i = 0
+            while (i < pendingCount && pending.isNotEmpty()) {
                 val p = pending.removeFirst()
+                i++
                 if (p.nextTryMs > nowMs) {
-                    keep.addLast(p)
+                    pending.addLast(p)
                     continue
                 }
                 if (processed >= MAX_PENDING_RETRY_PER_FRAME) {
-                    keep.addLast(p)
+                    pending.addLast(p)
                     continue
                 }
                 processed++
-                val ok = trySpawn(p.danmaku)
-                if (!ok) {
-                    val age = nowMs - p.firstTryMs
-                    if (age <= MAX_DELAY_MS) {
-                        p.nextTryMs = nowMs + DELAY_STEP_MS
-                        keep.addLast(p)
-                    }
+                val ok = trySpawn(p.danmaku, p.textWidth)
+                if (ok) continue
+
+                val age = nowMs - p.firstTryMs
+                if (age <= MAX_DELAY_MS) {
+                    p.nextTryMs = nowMs + DELAY_STEP_MS
+                    pending.addLast(p)
                 }
             }
-            pending.addAll(keep)
         }
 
         // Spawn: only spawn items whose timestamp <= current position (no early spawn).
@@ -247,20 +248,19 @@ class DanmakuEngine {
             val d = danmakus[index]
             index++
             spawnAttempts++
-            if (trySpawn(d)) continue
-            enqueuePending(d, nowMs)
+            if (d.text.isBlank()) continue
+            val tw = paint.measureText(d.text) + outlinePad * 2f
+            if (trySpawn(d, tw)) continue
+            enqueuePending(danmaku = d, textWidth = tw, nowMs = nowMs)
         }
 
-        // Build draw list.
-        val out = ArrayList<DrawItem>(active.size)
         val maxYTop = (safeTop + usableHeight - textBoxHeight).toFloat().coerceAtLeast(safeTop.toFloat())
         for (a in active) {
-            val x = scrollX(width, nowMs, a.startTimeMs, a.pxPerMs)
-            val yTop = (safeTop.toFloat() + laneHeight * a.lane).coerceAtMost(maxYTop)
-            out.add(DrawItem(a.danmaku, x, yTop, a.textWidth))
+            a.x = scrollX(width, nowMs, a.startTimeMs, a.pxPerMs)
+            a.yTop = (safeTop.toFloat() + laneHeight * a.lane).coerceAtMost(maxYTop)
         }
 
-        return out
+        return active
     }
 
     private fun pruneExpired(width: Int, nowMs: Int) {
@@ -322,16 +322,26 @@ class DanmakuEngine {
         }
     }
 
-    private fun enqueuePending(danmaku: Danmaku, nowMs: Int) {
+    private fun enqueuePending(danmaku: Danmaku, textWidth: Float, nowMs: Int) {
         if (pending.size >= MAX_PENDING) pending.removeFirst()
-        pending.addLast(Pending(danmaku, nowMs + DELAY_STEP_MS, nowMs))
+        pending.addLast(Pending(danmaku = danmaku, textWidth = textWidth, nextTryMs = nowMs + DELAY_STEP_MS, firstTryMs = nowMs))
     }
 
     private data class Pending(
         val danmaku: Danmaku,
+        val textWidth: Float,
         var nextTryMs: Int,
         val firstTryMs: Int,
     )
+
+    private fun ensureLaneBuffers(laneCount: Int) {
+        if (laneLast.size < laneCount) {
+            laneLast = arrayOfNulls(laneCount)
+        }
+        if (laneLastTail.size < laneCount) {
+            laneLastTail = FloatArray(laneCount)
+        }
+    }
 
     private fun speedMultiplier(level: Int): Float = when (min(10, max(1, level))) {
         1 -> 0.6f
