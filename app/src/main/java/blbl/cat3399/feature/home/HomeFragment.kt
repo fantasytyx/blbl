@@ -7,14 +7,13 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.google.android.material.tabs.TabLayoutMediator
 import blbl.cat3399.R
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.enableDpadTabFocus
 import blbl.cat3399.databinding.FragmentHomeBinding
-import blbl.cat3399.feature.video.VideoGridFragment
 import blbl.cat3399.feature.video.VideoGridTabSwitchFocusHost
 import blbl.cat3399.ui.BackPressHandler
 
@@ -31,8 +30,8 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
         val byTag = childFragmentManager.findFragmentByTag("f$itemId")
         val pageFragment =
             when {
-                byTag is VideoGridFragment -> byTag
-                else -> childFragmentManager.fragments.firstOrNull { it.isVisible && it is VideoGridFragment } as? VideoGridFragment
+                byTag is TabSwitchFocusTarget -> byTag
+                else -> childFragmentManager.fragments.firstOrNull { it.isVisible && it is TabSwitchFocusTarget } as? TabSwitchFocusTarget
             } ?: return false
         return pageFragment.requestFocusFirstCardFromContentSwitch()
     }
@@ -47,7 +46,9 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = when (position) {
                 0 -> getString(R.string.tab_recommend)
-                else -> getString(R.string.tab_popular)
+                1 -> getString(R.string.tab_popular)
+                2 -> getString(R.string.tab_bangumi)
+                else -> getString(R.string.tab_cinema)
             }
         }.attach()
         val tabLayout = binding.tabLayout
@@ -66,8 +67,8 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
                         val byTag = childFragmentManager.findFragmentByTag("f$itemId")
                         val pageFragment =
                             when {
-                                byTag is VideoGridFragment -> byTag
-                                else -> childFragmentManager.fragments.firstOrNull { it.isVisible && it is VideoGridFragment } as? VideoGridFragment
+                                byTag is TabSwitchFocusTarget -> byTag
+                                else -> childFragmentManager.fragments.firstOrNull { it.isVisible && it is TabSwitchFocusTarget } as? TabSwitchFocusTarget
                             } ?: return@setOnKeyListener false
                         return@setOnKeyListener pageFragment.requestFocusFirstCardFromTab()
                     }

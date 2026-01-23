@@ -2,6 +2,8 @@
 <resources>
     <string name="app_name">Blbl</string>
     <string name="tab_recommend">推荐</string>
+    <string name="tab_bangumi">番剧</string>
+    <string name="tab_cinema">影视</string>
     <string name="tab_popular">热门</string>
     <string name="tab_search">搜索</string>
     <string name="tab_category">分类</string>

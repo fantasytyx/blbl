@@ -28,6 +28,11 @@ object BiliApi {
     private const val TAG = "BiliApi"
     private const val PILI_REFERER = "https://www.bilibili.com"
 
+    // Used by APP-side PGC aggregation endpoints like /pgc/page/bangumi and /pgc/page/cinema/tab.
+    // The response schema/modules may vary by build; keep this as a reasonably new default.
+    private const val PGC_PAGE_BUILD_DEFAULT = 8130300
+    private const val PGC_PAGE_MOBI_APP_DEFAULT = "android"
+
     private const val LIVE_AREAS_CACHE_TTL_MS = 12 * 60 * 60 * 1000L // 12h
 
     // https://www.bilibili.com/read/cv11815732
@@ -160,6 +165,12 @@ object BiliApi {
         val page: Int,
         val pages: Int,
         val total: Int,
+    )
+
+    data class CursorPage<T>(
+        val items: List<T>,
+        val hasNext: Boolean,
+        val nextCursor: String?,
     )
 
     data class RelationStat(
@@ -1556,6 +1567,132 @@ object BiliApi {
             episodes = epList,
             progressLastEpId = progressLastEpId,
         )
+    }
+
+    private fun pgcSeasonTypeName(type: Int): String? {
+        return when (type) {
+            1 -> "番剧"
+            2 -> "电影"
+            3 -> "纪录片"
+            4 -> "国创"
+            5 -> "电视剧"
+            7 -> "综艺"
+            else -> null
+        }
+    }
+
+    private fun parsePgcScoreText(any: Any?): String? {
+        return when (any) {
+            is Number -> any.toDouble().takeIf { it > 0 }?.let { String.format(Locale.getDefault(), "%.1f", it) }
+            is String ->
+                any
+                    .trim()
+                    .trimEnd('分')
+                    .takeIf { it.isNotBlank() }
+                    ?.toDoubleOrNull()
+                    ?.takeIf { it > 0 }
+                    ?.let { String.format(Locale.getDefault(), "%.1f", it) }
+            else -> null
+        }
+    }
+
+    private fun parsePgcPageToBangumiSeasons(json: JSONObject): CursorPage<BangumiSeason> {
+        val result = json.optJSONObject("result") ?: JSONObject()
+        val hasNext = result.optInt("has_next", 0) == 1
+        val nextCursor = result.optString("next_cursor").trim().takeIf { it.isNotBlank() }
+        val modules = result.optJSONArray("modules") ?: JSONArray()
+
+        val items =
+            run {
+                val out = ArrayList<BangumiSeason>(128)
+                val seen = HashSet<Long>(256)
+                for (i in 0 until modules.length()) {
+                    val module = modules.optJSONObject(i) ?: continue
+                    val list = module.optJSONArray("items") ?: continue
+                    for (j in 0 until list.length()) {
+                        val obj = list.optJSONObject(j) ?: continue
+                        val seasonId = obj.optLong("season_id").takeIf { it > 0 } ?: continue
+                        if (!seen.add(seasonId)) continue
+
+                        val title = obj.optString("title", "").trim()
+                        val cover = obj.optString("cover").trim().takeIf { it.isNotBlank() }
+                        val seasonType = obj.optInt("season_type", 0).takeIf { it > 0 }
+                        val typeName = seasonType?.let(::pgcSeasonTypeName)
+                        val badge = obj.optString("badge").trim().takeIf { it.isNotBlank() }
+
+                        val scoreText = parsePgcScoreText(obj.opt("score"))
+                        val newEpIndexShow =
+                            obj.optJSONObject("new_ep")
+                                ?.optString("index_show")
+                                ?.trim()
+                                ?.takeIf { it.isNotBlank() }
+                        val desc = obj.optString("desc").trim().takeIf { it.isNotBlank() }
+                        val styles = obj.optString("season_styles").trim().takeIf { it.isNotBlank() }
+
+                        val progressText =
+                            buildList {
+                                scoreText?.let { add("${it}分") }
+                                newEpIndexShow?.let { add(it) }
+                                if (newEpIndexShow == null) {
+                                    desc?.let { add(it) }
+                                }
+                                if (newEpIndexShow == null && desc == null) {
+                                    styles?.let { add(it) }
+                                }
+                            }.joinToString(" · ").takeIf { it.isNotBlank() }
+
+                        out.add(
+                            BangumiSeason(
+                                seasonId = seasonId,
+                                seasonTypeName = typeName,
+                                title = title,
+                                coverUrl = cover,
+                                badge = badge,
+                                badgeEp = null,
+                                progressText = progressText,
+                                totalCount = null,
+                                lastEpIndex = null,
+                                lastEpId = null,
+                                newestEpIndex = null,
+                                isFinish = null,
+                            ),
+                        )
+                    }
+                }
+                out
+            }
+
+        return CursorPage(items = items, hasNext = hasNext, nextCursor = nextCursor)
+    }
+
+    suspend fun pgcBangumiPage(cursor: String? = null, build: Int = PGC_PAGE_BUILD_DEFAULT): CursorPage<BangumiSeason> {
+        val params = LinkedHashMap<String, String>(4)
+        params["mobi_app"] = PGC_PAGE_MOBI_APP_DEFAULT
+        params["build"] = build.toString()
+        cursor?.trim()?.takeIf { it.isNotBlank() }?.let { params["cursor"] = it }
+        val url = BiliClient.withQuery("https://api.bilibili.com/pgc/page/bangumi", params)
+        val json = BiliClient.getJson(url)
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        return withContext(Dispatchers.Default) { parsePgcPageToBangumiSeasons(json) }
+    }
+
+    suspend fun pgcCinemaTabPage(cursor: String? = null, build: Int = PGC_PAGE_BUILD_DEFAULT): CursorPage<BangumiSeason> {
+        val params = LinkedHashMap<String, String>(4)
+        params["mobi_app"] = PGC_PAGE_MOBI_APP_DEFAULT
+        params["build"] = build.toString()
+        cursor?.trim()?.takeIf { it.isNotBlank() }?.let { params["cursor"] = it }
+        val url = BiliClient.withQuery("https://api.bilibili.com/pgc/page/cinema/tab", params)
+        val json = BiliClient.getJson(url)
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        return withContext(Dispatchers.Default) { parsePgcPageToBangumiSeasons(json) }
     }
 
     suspend fun recommend(

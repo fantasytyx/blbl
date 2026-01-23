@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.tv.TvMode
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
@@ -26,7 +27,7 @@ import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-class VideoGridFragment : Fragment(), RefreshKeyHandler {
+class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     private var _binding: FragmentVideoGridBinding? = null
     private val binding get() = _binding!!
 
@@ -353,13 +354,13 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler {
         }
     }
 
-    fun requestFocusFirstCardFromTab(): Boolean {
+    override fun requestFocusFirstCardFromTab(): Boolean {
         pendingFocusFirstCardFromTab = true
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }
 
-    fun requestFocusFirstCardFromContentSwitch(): Boolean {
+    override fun requestFocusFirstCardFromContentSwitch(): Boolean {
         pendingFocusFirstCardFromContentSwitch = true
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
