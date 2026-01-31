@@ -622,7 +622,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         val tabLayout = binding.tabLayout
         tabLayout.post {
             if (_binding == null) return@post
-            tabLayout.enableDpadTabFocus()
+            tabLayout.enableDpadTabFocus(selectOnFocus = false)
             val tabStrip = tabLayout.getChildAt(0) as? ViewGroup ?: return@post
             for (i in 0 until tabStrip.childCount) {
                 tabStrip.getChildAt(i).setOnKeyListener { _, keyCode, event ->

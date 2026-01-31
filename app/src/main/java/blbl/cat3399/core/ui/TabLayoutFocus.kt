@@ -6,6 +6,7 @@ import blbl.cat3399.R
 import com.google.android.material.tabs.TabLayout
 
 fun TabLayout.enableDpadTabFocus(
+    selectOnFocus: Boolean = true,
     onTabFocused: ((position: Int) -> Unit)? = null,
 ) {
     val tabStrip = getChildAt(0) as? ViewGroup ?: return
@@ -17,7 +18,7 @@ fun TabLayout.enableDpadTabFocus(
         tabView.stateListAnimator = AnimatorInflater.loadStateListAnimator(context, R.animator.blbl_focus_scale)
         tabView.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) return@setOnFocusChangeListener
-            getTabAt(index)?.select()
+            if (selectOnFocus) getTabAt(index)?.select()
             onTabFocused?.invoke(index)
         }
     }
