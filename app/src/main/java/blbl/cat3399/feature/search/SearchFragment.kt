@@ -8,7 +8,6 @@ import android.util.TypedValue
 import android.view.FocusFinder
 import android.view.KeyEvent
 import android.view.LayoutInflater
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -302,7 +301,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         binding.btnClear.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if (keyCode != KeyEvent.KEYCODE_DPAD_UP) return@setOnKeyListener false
-            // Top edge: don't escape to sidebar.
+            binding.tvQuery.requestFocus()
             true
         }
         binding.btnBackspace.setOnClickListener {
@@ -311,7 +310,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         binding.btnBackspace.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if (keyCode != KeyEvent.KEYCODE_DPAD_UP) return@setOnKeyListener false
-            // Top edge: don't escape to sidebar.
+            binding.tvQuery.requestFocus()
             true
         }
         binding.btnSearch.setOnClickListener { performSearch() }
@@ -352,6 +351,8 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     private fun setupQueryInput() {
         val input = binding.tvQuery
 
+        var imeEditMode = false
+
         input.setOnEditorActionListener { _, actionId, event ->
             val isEnter =
                 event != null &&
@@ -370,35 +371,78 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
             setQueryFromTextInput(it?.toString().orEmpty())
         }
 
+        fun enterImeEditMode() {
+            if (binding.panelResults.visibility == View.VISIBLE) showInput()
+            imeEditMode = true
+
+            input.showSoftInputOnFocus = true
+            input.isCursorVisible = true
+            input.isLongClickable = true
+            input.setTextIsSelectable(true)
+
+            input.requestFocus()
+            input.setSelection(input.text?.length ?: 0)
+            // Some TV input methods won't show the IME synchronously; post for reliability.
+            input.post {
+                if (_binding == null) return@post
+                if (!input.isFocused) input.requestFocus()
+                input.setSelection(input.text?.length ?: 0)
+                showIme(input)
+            }
+        }
+
+        fun exitImeEditMode() {
+            imeEditMode = false
+            input.showSoftInputOnFocus = false
+            input.isCursorVisible = false
+            input.isLongClickable = false
+            input.setTextIsSelectable(false)
+            hideIme(input)
+        }
+
         input.apply {
-            // Defaults to on-screen keyboard + DPAD navigation.
-            // Keep IME disabled on focus, but allow touch users to explicitly open the IME.
-            isFocusable = false
-            isFocusableInTouchMode = false
+            // Default mode: on-screen keyboard + DPAD navigation.
+            // Allow DPAD focus/click on the input, but keep IME disabled unless explicitly opened.
+            isFocusable = true
+            isFocusableInTouchMode = true
             isCursorVisible = false
             isLongClickable = false
             setTextIsSelectable(false)
             showSoftInputOnFocus = false
-            setOnClickListener(null)
-            setOnFocusChangeListener(null)
         }
 
-        input.setOnTouchListener { _, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                if (binding.panelResults.visibility == View.VISIBLE) showInput()
+        input.setOnClickListener { enterImeEditMode() }
+        input.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) exitImeEditMode()
+        }
+        input.setOnKeyListener { _, keyCode, event ->
+            if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    enterImeEditMode()
+                    true
+                }
 
-                // Enable focus + editing only when the user explicitly touches the input.
-                input.isFocusable = true
-                input.isFocusableInTouchMode = true
-                input.isCursorVisible = true
-                input.isLongClickable = true
-                input.setTextIsSelectable(true)
+                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (imeEditMode) return@setOnKeyListener false
+                    // Prevent focus escaping to sidebar.
+                    if (binding.panelInput.visibility == View.VISIBLE) {
+                        focusLastKey()
+                        true
+                    } else {
+                        false
+                    }
+                }
 
-                input.requestFocus()
-                input.setSelection(input.text?.length ?: 0)
-                showIme(input)
+                KeyEvent.KEYCODE_DPAD_UP -> {
+                    // Top edge: don't escape to sidebar.
+                    true
+                }
+
+                else -> false
             }
-            false
         }
     }
 
@@ -629,7 +673,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
                     if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
                     when (keyCode) {
 	                        KeyEvent.KEYCODE_DPAD_UP -> {
-	                            // Prevent focus escaping to sidebar when pressing UP on top controls.
+	                            binding.tvQuery.requestFocus()
 	                            true
 	                        }
 
@@ -660,7 +704,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         binding.btnSort.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if (keyCode != KeyEvent.KEYCODE_DPAD_UP) return@setOnKeyListener false
-            // Prevent focus escaping to sidebar when pressing UP on top controls.
+            binding.tvQuery.requestFocus()
             true
         }
 	        updateSortUi()
@@ -1414,6 +1458,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 
         rescaleLayoutSize(b.tvQuery, width = false, height = true)
         rescaleMargins(b.tvQuery, start = true, top = false, end = true, bottom = false)
+        rescalePadding(b.tvQuery, left = true, top = true, right = true, bottom = true)
         rescaleTextSize(b.tvQuery)
 
         rescaleMargins(b.panelInput, start = false, top = true, end = false, bottom = false)
