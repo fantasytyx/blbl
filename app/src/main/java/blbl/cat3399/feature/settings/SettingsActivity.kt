@@ -433,7 +433,7 @@ class SettingsActivity : BaseActivity() {
             }
 
             "弹幕透明度" -> {
-                val options = listOf(1.0f, 0.8f, 0.6f, 0.4f, 0.2f)
+                val options = (20 downTo 1).map { it / 20f }
                 showChoiceDialog(
                     title = "弹幕透明度",
                     items = options.map { String.format(Locale.US, "%.2f", it) },
@@ -445,7 +445,7 @@ class SettingsActivity : BaseActivity() {
             }
 
             "弹幕字体大小" -> {
-                val options = listOf(14, 16, 18, 20, 22, 24, 28, 32, 36, 40)
+                val options = (10..60 step 2).toList()
                 showChoiceDialog(
                     title = "弹幕字体大小(sp)",
                     items = options.map { it.toString() },
@@ -458,9 +458,15 @@ class SettingsActivity : BaseActivity() {
 
             "弹幕占屏比" -> {
                 val options = listOf(
+                    (1f / 5f) to "1/5",
                     0.25f to "1/4",
+                    (1f / 3f) to "1/3",
+                    (2f / 5f) to "2/5",
                     0.50f to "1/2",
+                    (3f / 5f) to "3/5",
+                    (2f / 3f) to "2/3",
                     0.75f to "3/4",
+                    (4f / 5f) to "4/5",
                     1.00f to "不限",
                 )
                 showChoiceDialog(
@@ -1304,9 +1310,15 @@ class SettingsActivity : BaseActivity() {
 
     private fun areaText(area: Float): String = when {
         area >= 0.99f -> "不限"
-        area >= 0.74f -> "3/4"
-        area >= 0.49f -> "1/2"
-        else -> "1/4"
+        area >= 0.78f -> "4/5"
+        area >= 0.71f -> "3/4"
+        area >= 0.62f -> "2/3"
+        area >= 0.55f -> "3/5"
+        area >= 0.45f -> "1/2"
+        area >= 0.36f -> "2/5"
+        area >= 0.29f -> "1/3"
+        area >= 0.22f -> "1/4"
+        else -> "1/5"
     }
 
     private fun aiLevelText(level: Int): String = if (level == 0) "默认(3)" else level.coerceIn(1, 10).toString()
