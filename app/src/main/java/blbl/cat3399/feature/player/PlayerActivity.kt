@@ -70,6 +70,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -1376,41 +1377,41 @@ class PlayerActivity : BaseActivity() {
                         is Playable.Dash -> {
                             lastPickedDash = playable
                             debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
-                            AppLog.i(
-                                "Player",
-                                "picked DASH qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} a=${playable.audioKind}(${playable.audioId}) video=${playable.videoUrl.take(40)}",
-                            )
-                            val videoFactory = createCdnFactory(DebugStreamKind.VIDEO)
-                            val audioFactory = createCdnFactory(DebugStreamKind.AUDIO)
-                            exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
-                            applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
-                            applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
-                        }
+	                            AppLog.i(
+	                                "Player",
+	                                "picked DASH qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} a=${playable.audioKind}(${playable.audioId}) video=${playable.videoUrl.take(40)}",
+	                            )
+	                            val videoFactory = createCdnFactory(DebugStreamKind.VIDEO, urlCandidates = playable.videoUrlCandidates)
+	                            val audioFactory = createCdnFactory(DebugStreamKind.AUDIO, urlCandidates = playable.audioUrlCandidates)
+	                            exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
+	                            applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
+	                            applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
+	                        }
 
                         is Playable.VideoOnly -> {
                             lastPickedDash = null
                             session = session.copy(actualAudioId = 0)
                             (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
                             debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
-                            AppLog.i(
-                                "Player",
-                                "picked VideoOnly qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} video=${playable.videoUrl.take(40)}",
-                            )
-                            val mainFactory = createCdnFactory(DebugStreamKind.MAIN)
-                            exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
-                            applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
-                        }
+	                            AppLog.i(
+	                                "Player",
+	                                "picked VideoOnly qn=${playable.qn} codecid=${playable.codecid} dv=${playable.isDolbyVision} video=${playable.videoUrl.take(40)}",
+	                            )
+	                            val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.videoUrlCandidates)
+	                            exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
+	                            applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
+	                        }
 
                         is Playable.Progressive -> {
                             lastPickedDash = null
-                            session = session.copy(actualAudioId = 0)
-                            (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-                            debugCdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
-                            AppLog.i("Player", "picked Progressive url=${playable.url.take(60)}")
-                            val mainFactory = createCdnFactory(DebugStreamKind.MAIN)
-                            exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
-                        }
-                    }
+	                            session = session.copy(actualAudioId = 0)
+	                            (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+	                            debugCdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
+	                            AppLog.i("Player", "picked Progressive url=${playable.url.take(60)}")
+	                            val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.urlCandidates)
+	                            exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
+	                        }
+	                    }
                     trace?.log("exo:setMediaSource:done")
                     trace?.log("exo:prepare")
                     exo.prepare()
@@ -3277,6 +3278,8 @@ class PlayerActivity : BaseActivity() {
         data class Dash(
             val videoUrl: String,
             val audioUrl: String,
+            val videoUrlCandidates: List<String>,
+            val audioUrlCandidates: List<String>,
             val qn: Int,
             val codecid: Int,
             val audioId: Int,
@@ -3286,12 +3289,16 @@ class PlayerActivity : BaseActivity() {
 
         data class VideoOnly(
             val videoUrl: String,
+            val videoUrlCandidates: List<String>,
             val qn: Int,
             val codecid: Int,
             val isDolbyVision: Boolean,
         ) : Playable
 
-        data class Progressive(val url: String) : Playable
+        data class Progressive(
+            val url: String,
+            val urlCandidates: List<String>,
+        ) : Playable
     }
 
     private enum class DashAudioKind { NORMAL, DOLBY, FLAC }
@@ -3348,7 +3355,7 @@ class PlayerActivity : BaseActivity() {
         )
     }
 
-    private fun selectCdnUrlFromTrack(obj: JSONObject, preference: String): String {
+    private fun selectCdnUrlsFromTrack(obj: JSONObject, preference: String): List<String> {
         val candidates = buildList {
             val base =
                 obj.optString("baseUrl", obj.optString("base_url", obj.optString("url", "")))
@@ -3360,7 +3367,7 @@ class PlayerActivity : BaseActivity() {
                 if (u.isNotBlank()) add(u)
             }
         }.distinct()
-        if (candidates.isEmpty()) return ""
+        if (candidates.isEmpty()) return emptyList()
 
         fun hostOf(url: String): String =
             runCatching { Uri.parse(url).host.orEmpty() }.getOrDefault("").lowercase(Locale.US)
@@ -3375,13 +3382,15 @@ class PlayerActivity : BaseActivity() {
             return host.contains("bilivideo") && !isMcdn(url)
         }
 
-        val picked =
+        val preferred =
             when (preference) {
-                AppPrefs.PLAYER_CDN_MCDN -> candidates.firstOrNull(::isMcdn)
-                AppPrefs.PLAYER_CDN_BILIVIDEO -> candidates.firstOrNull(::isBilivideo)
-                else -> null
+                AppPrefs.PLAYER_CDN_MCDN -> candidates.filter(::isMcdn)
+                AppPrefs.PLAYER_CDN_BILIVIDEO -> candidates.filter(::isBilivideo)
+                else -> emptyList()
             }
-        return picked ?: candidates.first()
+        if (preferred.isEmpty()) return candidates
+        val rest = candidates.filterNot { preferred.contains(it) }
+        return preferred + rest
     }
 
     private suspend fun pickPlayable(json: JSONObject, constraints: PlaybackConstraints): Playable {
@@ -3399,8 +3408,8 @@ class PlayerActivity : BaseActivity() {
             val dolby = dash.optJSONObject("dolby")
             val flac = dash.optJSONObject("flac")
 
-            fun baseUrl(obj: JSONObject): String =
-                selectCdnUrlFromTrack(obj, preference = BiliClient.prefs.playerCdnPreference)
+            fun baseUrls(obj: JSONObject): List<String> =
+                selectCdnUrlsFromTrack(obj, preference = BiliClient.prefs.playerCdnPreference)
 
             val preferCodecid = when (session.preferCodec) {
                 "HEVC" -> 12
@@ -3425,7 +3434,7 @@ class PlayerActivity : BaseActivity() {
             val rawVideoItems = buildList {
                 for (i in 0 until videos.length()) {
                     val v = videos.optJSONObject(i) ?: continue
-                    if (baseUrl(v).isBlank()) continue
+                    if (baseUrls(v).isEmpty()) continue
                     val qn = qnOf(v)
                     if (qn <= 0) continue
                     add(v)
@@ -3480,7 +3489,8 @@ class PlayerActivity : BaseActivity() {
             if (picked == null) {
                 AppLog.w("Player", "no DASH video track picked; fallback to durl if possible")
             } else {
-                val videoUrl = baseUrl(picked)
+                val videoUrlCandidates = baseUrls(picked)
+                val videoUrl = videoUrlCandidates.firstOrNull().orEmpty()
                 val pickedQnFinal = qnOf(picked)
                 val pickedCodecid = picked.optInt("codecid", 0)
                 val pickedIsDolbyVision = isDolbyVisionTrack(picked)
@@ -3488,6 +3498,7 @@ class PlayerActivity : BaseActivity() {
                 dashVideoMetaForFallback =
                     Playable.VideoOnly(
                         videoUrl = videoUrl,
+                        videoUrlCandidates = videoUrlCandidates,
                         qn = pickedQnFinal,
                         codecid = pickedCodecid,
                         isDolbyVision = pickedIsDolbyVision,
@@ -3498,19 +3509,19 @@ class PlayerActivity : BaseActivity() {
                 val allAudioCandidates = buildList<AudioCandidate> {
                     for (i in 0 until audios.length()) {
                         val a = audios.optJSONObject(i) ?: continue
-                        if (baseUrl(a).isBlank()) continue
+                        if (baseUrls(a).isEmpty()) continue
                         add(AudioCandidate(a, DashAudioKind.NORMAL, a.optInt("id", 0), a.optLong("bandwidth", 0L)))
                     }
                     val dolbyAudios = dolby?.optJSONArray("audio")
                     if (dolbyAudios != null && constraints.allowDolbyAudio) {
                         for (i in 0 until dolbyAudios.length()) {
                             val a = dolbyAudios.optJSONObject(i) ?: continue
-                            if (baseUrl(a).isBlank()) continue
+                            if (baseUrls(a).isEmpty()) continue
                             add(AudioCandidate(a, DashAudioKind.DOLBY, a.optInt("id", 0), a.optLong("bandwidth", 0L)))
                         }
                     }
                     val flacAudio = flac?.optJSONObject("audio")
-                    if (flacAudio != null && constraints.allowFlacAudio && baseUrl(flacAudio).isNotBlank()) {
+                    if (flacAudio != null && constraints.allowFlacAudio && baseUrls(flacAudio).isNotEmpty()) {
                         add(AudioCandidate(flacAudio, DashAudioKind.FLAC, flacAudio.optInt("id", 0), flacAudio.optLong("bandwidth", 0L)))
                     }
                 }
@@ -3530,10 +3541,13 @@ class PlayerActivity : BaseActivity() {
                 if (audioPicked == null) {
                     AppLog.w("Player", "no DASH audio track picked; fallback to durl if possible (or video-only if durl missing)")
                 } else {
-                    val audioUrl = baseUrl(audioPicked.obj)
+                    val audioUrlCandidates = baseUrls(audioPicked.obj)
+                    val audioUrl = audioUrlCandidates.firstOrNull().orEmpty()
                     return Playable.Dash(
                         videoUrl = videoUrl,
                         audioUrl = audioUrl,
+                        videoUrlCandidates = videoUrlCandidates,
+                        audioUrlCandidates = audioUrlCandidates,
                         qn = pickedQnFinal,
                         codecid = pickedCodecid,
                         audioId = audioPicked.id,
@@ -3546,13 +3560,14 @@ class PlayerActivity : BaseActivity() {
 
         // Fallback: try durl (progressive) if dash missing.
         val durlObj = data.optJSONArray("durl")?.optJSONObject(0)
-        val url =
+        val urlCandidates =
             if (durlObj != null) {
-                selectCdnUrlFromTrack(durlObj, preference = BiliClient.prefs.playerCdnPreference)
+                selectCdnUrlsFromTrack(durlObj, preference = BiliClient.prefs.playerCdnPreference)
             } else {
-                ""
+                emptyList()
             }
-        if (url.isNotBlank()) return Playable.Progressive(url)
+        val url = urlCandidates.firstOrNull().orEmpty()
+        if (url.isNotBlank()) return Playable.Progressive(url = url, urlCandidates = urlCandidates)
 
         val cid = currentCid.takeIf { it > 0 }
             ?: intent.getLongExtra(EXTRA_CID, -1L).takeIf { it > 0 }
@@ -3571,13 +3586,14 @@ class PlayerActivity : BaseActivity() {
             )
         val fallbackData = fallbackJson.optJSONObject("data") ?: fallbackJson.optJSONObject("result") ?: JSONObject()
         val fallbackObj = fallbackData.optJSONArray("durl")?.optJSONObject(0)
-        val fallbackUrl =
+        val fallbackUrlCandidates =
             if (fallbackObj != null) {
-                selectCdnUrlFromTrack(fallbackObj, preference = BiliClient.prefs.playerCdnPreference)
+                selectCdnUrlsFromTrack(fallbackObj, preference = BiliClient.prefs.playerCdnPreference)
             } else {
-                ""
+                emptyList()
             }
-        if (fallbackUrl.isNotBlank()) return Playable.Progressive(fallbackUrl)
+        val fallbackUrl = fallbackUrlCandidates.firstOrNull().orEmpty()
+        if (fallbackUrl.isNotBlank()) return Playable.Progressive(url = fallbackUrl, urlCandidates = fallbackUrlCandidates)
 
         // If server returns DASH video without any audio tracks, allow video-only playback as a last resort.
         // (We still prefer progressive durl when available because it usually contains audio.)
@@ -3591,7 +3607,89 @@ class PlayerActivity : BaseActivity() {
 
     private enum class DebugStreamKind { VIDEO, AUDIO, MAIN }
 
-    private fun createCdnFactory(kind: DebugStreamKind): OkHttpDataSource.Factory {
+    private class CdnFailoverState(
+        val kind: DebugStreamKind,
+        val candidates: List<Uri>,
+    ) {
+        @Volatile
+        private var preferredIndex: Int = 0
+
+        @Synchronized
+        fun getPreferredIndex(): Int {
+            val last = candidates.lastIndex
+            return preferredIndex.coerceIn(0, last.coerceAtLeast(0))
+        }
+
+        @Synchronized
+        fun prefer(index: Int) {
+            val last = candidates.lastIndex
+            preferredIndex = index.coerceIn(0, last.coerceAtLeast(0))
+        }
+    }
+
+    private class CdnFailoverDataSourceFactory(
+        private val upstreamFactory: DataSource.Factory,
+        private val state: CdnFailoverState,
+    ) : DataSource.Factory {
+        override fun createDataSource(): DataSource = CdnFailoverDataSource(upstreamFactory, state)
+    }
+
+    private class CdnFailoverDataSource(
+        private val upstreamFactory: DataSource.Factory,
+        private val state: CdnFailoverState,
+    ) : DataSource {
+        private var upstream: DataSource? = null
+        private val transferListeners = ArrayList<TransferListener>(2)
+
+        override fun addTransferListener(transferListener: TransferListener) {
+            transferListeners.add(transferListener)
+            upstream?.addTransferListener(transferListener)
+        }
+
+        override fun open(dataSpec: DataSpec): Long {
+            closeQuietly()
+            val candidates = state.candidates
+            if (candidates.isEmpty()) throw IOException("No CDN candidates (kind=${state.kind})")
+
+            val start = state.getPreferredIndex()
+            var lastException: IOException? = null
+            for (attempt in candidates.indices) {
+                val idx = (start + attempt) % candidates.size
+                val uri = candidates[idx]
+                val ds = upstreamFactory.createDataSource()
+                transferListeners.forEach { ds.addTransferListener(it) }
+                val spec = dataSpec.buildUpon().setUri(uri).build()
+                try {
+                    val openedLength = ds.open(spec)
+                    upstream = ds
+                    state.prefer(idx)
+                    return openedLength
+                } catch (e: IOException) {
+                    runCatching { ds.close() }
+                    lastException = e
+                }
+            }
+            throw lastException ?: IOException("Failed to open any CDN candidate (kind=${state.kind})")
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val ds = upstream ?: throw IllegalStateException("read() before open() (kind=${state.kind})")
+            return ds.read(buffer, offset, length)
+        }
+
+        override fun getUri(): Uri? = upstream?.uri
+
+        override fun close() {
+            closeQuietly()
+        }
+
+        private fun closeQuietly() {
+            runCatching { upstream?.close() }
+            upstream = null
+        }
+    }
+
+    private fun createCdnFactory(kind: DebugStreamKind, urlCandidates: List<String>? = null): DataSource.Factory {
         val listener =
             object : TransferListener {
                 override fun onTransferInitializing(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
@@ -3611,12 +3709,21 @@ class PlayerActivity : BaseActivity() {
                 override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) {}
             }
 
-        return OkHttpDataSource.Factory(BiliClient.cdnOkHttp).setTransferListener(listener)
+        val upstream = OkHttpDataSource.Factory(BiliClient.cdnOkHttp).setTransferListener(listener)
+        val uris =
+            urlCandidates
+                .orEmpty()
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .distinct()
+                .map { Uri.parse(it) }
+        if (uris.size <= 1) return upstream
+        return CdnFailoverDataSourceFactory(upstreamFactory = upstream, state = CdnFailoverState(kind = kind, candidates = uris))
     }
 
     private fun buildMerged(
-        videoFactory: OkHttpDataSource.Factory,
-        audioFactory: OkHttpDataSource.Factory,
+        videoFactory: DataSource.Factory,
+        audioFactory: DataSource.Factory,
         videoUrl: String,
         audioUrl: String,
         subtitle: MediaItem.SubtitleConfiguration?,
@@ -3632,7 +3739,7 @@ class PlayerActivity : BaseActivity() {
         return if (subtitleSource != null) MergingMediaSource(videoSource, audioSource, subtitleSource) else MergingMediaSource(videoSource, audioSource)
     }
 
-    private fun buildProgressive(factory: OkHttpDataSource.Factory, url: String, subtitle: MediaItem.SubtitleConfiguration?): MediaSource {
+    private fun buildProgressive(factory: DataSource.Factory, url: String, subtitle: MediaItem.SubtitleConfiguration?): MediaSource {
         val subs = listOfNotNull(subtitle)
         val main = ProgressiveMediaSource.Factory(factory).createMediaSource(
             MediaItem.Builder().setUri(Uri.parse(url)).setSubtitleConfigurations(subs).build(),
@@ -3709,33 +3816,33 @@ class PlayerActivity : BaseActivity() {
                 lastAvailableQns = parseDashVideoQnList(playJson)
                 lastAvailableAudioIds = parseDashAudioIdList(playJson, constraints = playbackConstraints)
                 when (playable) {
-                    is Playable.Dash -> {
-                        lastPickedDash = playable
-                        debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
-                        val videoFactory = createCdnFactory(DebugStreamKind.VIDEO)
-                        val audioFactory = createCdnFactory(DebugStreamKind.AUDIO)
-                        exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
-                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
-                        applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
-                    }
+	                    is Playable.Dash -> {
+	                        lastPickedDash = playable
+	                        debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
+	                        val videoFactory = createCdnFactory(DebugStreamKind.VIDEO, urlCandidates = playable.videoUrlCandidates)
+	                        val audioFactory = createCdnFactory(DebugStreamKind.AUDIO, urlCandidates = playable.audioUrlCandidates)
+	                        exo.setMediaSource(buildMerged(videoFactory, audioFactory, playable.videoUrl, playable.audioUrl, subtitleConfig))
+	                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
+	                        applyAudioFallbackIfNeeded(requestedAudioId = session.targetAudioId, actualAudioId = playable.audioId)
+	                    }
                     is Playable.VideoOnly -> {
                         lastPickedDash = null
-                        session = session.copy(actualAudioId = 0)
-                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-                        debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
-                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN)
-                        exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
-                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
-                    }
+	                        session = session.copy(actualAudioId = 0)
+	                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+	                        debugCdnHost = runCatching { Uri.parse(playable.videoUrl).host }.getOrNull()
+	                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.videoUrlCandidates)
+	                        exo.setMediaSource(buildProgressive(mainFactory, playable.videoUrl, subtitleConfig))
+	                        applyResolutionFallbackIfNeeded(requestedQn = session.targetQn, actualQn = playable.qn)
+	                    }
                     is Playable.Progressive -> {
                         lastPickedDash = null
-                        session = session.copy(actualAudioId = 0)
-                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
-                        debugCdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
-                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN)
-                        exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
-                    }
-                }
+	                        session = session.copy(actualAudioId = 0)
+	                        (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
+	                        debugCdnHost = runCatching { Uri.parse(playable.url).host }.getOrNull()
+	                        val mainFactory = createCdnFactory(DebugStreamKind.MAIN, urlCandidates = playable.urlCandidates)
+	                        exo.setMediaSource(buildProgressive(mainFactory, playable.url, subtitleConfig))
+	                    }
+	                }
                 exo.prepare()
                 applySubtitleEnabled(exo)
                 if (keepPosition) exo.seekTo(pos)
