@@ -5,4 +5,6 @@ data class Following(
     val name: String,
     val avatarUrl: String?,
     val sign: String? = null,
+    val isLive: Boolean = false,
+    val liveRoomId: Long = 0L,
 )

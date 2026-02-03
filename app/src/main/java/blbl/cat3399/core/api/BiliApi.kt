@@ -619,7 +619,21 @@ object BiliApi {
             if (name.isBlank()) continue
             val avatar = obj.optString("upic").takeIf { it.isNotBlank() }
             val sign = obj.optString("usign").takeIf { it.isNotBlank() }
-            out.add(Following(mid = mid, name = name, avatarUrl = avatar, sign = sign))
+            val liveRoomId = obj.optLong("room_id").takeIf { it > 0 } ?: 0L
+            val isLive =
+                obj.optInt("is_live", 0) == 1 ||
+                    obj.optInt("live_status", 0) == 1 ||
+                    obj.optBoolean("is_live", false)
+            out.add(
+                Following(
+                    mid = mid,
+                    name = name,
+                    avatarUrl = avatar,
+                    sign = sign,
+                    isLive = isLive && liveRoomId > 0L,
+                    liveRoomId = liveRoomId,
+                ),
+            )
         }
         return out
     }

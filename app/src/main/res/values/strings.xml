@@ -55,6 +55,9 @@
     <string name="search_sort_user_default">默认排序</string>
     <string name="search_sort_user_fans">粉丝数</string>
     <string name="search_sort_user_level">用户等级</string>
+    <string name="search_user_live_actions_title">%1$s 正在直播</string>
+    <string name="search_user_action_enter_live">进入直播间</string>
+    <string name="search_user_action_open_profile">查看主页</string>
     <string name="search_media_ft">影视</string>
     <string name="search_media_bangumi">番剧</string>
     <string name="search_unsupported">该分类暂未实现</string>

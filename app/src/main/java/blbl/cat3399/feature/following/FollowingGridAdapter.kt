@@ -67,6 +67,7 @@ class FollowingGridAdapter(
             binding.tvName.text = item.name
             binding.tvSign.text = item.sign.orEmpty()
             binding.tvSign.isVisible = !item.sign.isNullOrBlank()
+            binding.tvBadgeLive.isVisible = item.isLive
 
             ImageLoader.loadInto(binding.ivAvatar, ImageUrl.avatar(item.avatarUrl))
             binding.root.setOnClickListener { onClick(item) }
@@ -93,12 +94,34 @@ class FollowingGridAdapter(
 
             val avatarSize =
                 scaledPx(R.dimen.following_grid_avatar_size_tv).coerceAtLeast(1)
-            val avatarLp = binding.ivAvatar.layoutParams
+            val avatarLp = binding.flAvatar.layoutParams
             if (avatarLp.width != avatarSize || avatarLp.height != avatarSize) {
                 avatarLp.width = avatarSize
                 avatarLp.height = avatarSize
-                binding.ivAvatar.layoutParams = avatarLp
+                binding.flAvatar.layoutParams = avatarLp
             }
+
+            (binding.tvBadgeLive.layoutParams as? MarginLayoutParams)?.let { lp ->
+                val m = scaledPx(R.dimen.video_card_duration_padding_v_tv)
+                if (lp.leftMargin != m || lp.topMargin != m || lp.rightMargin != m || lp.bottomMargin != m) {
+                    lp.setMargins(m, m, m, m)
+                    binding.tvBadgeLive.layoutParams = lp
+                }
+            }
+            val badgePadH = scaledPx(R.dimen.video_card_duration_padding_h_tv)
+            val badgePadV = scaledPx(R.dimen.video_card_duration_padding_v_tv)
+            if (
+                binding.tvBadgeLive.paddingLeft != badgePadH ||
+                binding.tvBadgeLive.paddingTop != badgePadV ||
+                binding.tvBadgeLive.paddingRight != badgePadH ||
+                binding.tvBadgeLive.paddingBottom != badgePadV
+            ) {
+                binding.tvBadgeLive.setPadding(badgePadH, badgePadV, badgePadH, badgePadV)
+            }
+            binding.tvBadgeLive.setTextSize(
+                TypedValue.COMPLEX_UNIT_PX,
+                scaledPxF(R.dimen.video_card_duration_text_size_tv),
+            )
 
             (binding.tvName.layoutParams as? MarginLayoutParams)?.let { lp ->
                 val mt = scaledPx(R.dimen.following_grid_name_margin_top_tv)

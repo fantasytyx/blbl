@@ -527,13 +527,46 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         if (!::userAdapter.isInitialized) {
             userAdapter =
                 FollowingGridAdapter { following ->
-                    startActivity(
-                        Intent(requireContext(), UpDetailActivity::class.java)
-                            .putExtra(UpDetailActivity.EXTRA_MID, following.mid)
-                            .putExtra(UpDetailActivity.EXTRA_NAME, following.name)
-                            .putExtra(UpDetailActivity.EXTRA_AVATAR, following.avatarUrl)
-                            .putExtra(UpDetailActivity.EXTRA_SIGN, following.sign),
-                    )
+                    fun openProfile() {
+                        startActivity(
+                            Intent(requireContext(), UpDetailActivity::class.java)
+                                .putExtra(UpDetailActivity.EXTRA_MID, following.mid)
+                                .putExtra(UpDetailActivity.EXTRA_NAME, following.name)
+                                .putExtra(UpDetailActivity.EXTRA_AVATAR, following.avatarUrl)
+                                .putExtra(UpDetailActivity.EXTRA_SIGN, following.sign),
+                        )
+                    }
+
+                    fun openLive() {
+                        val rid = following.liveRoomId.takeIf { it > 0L } ?: return
+                        startActivity(
+                            Intent(requireContext(), LivePlayerActivity::class.java)
+                                .putExtra(LivePlayerActivity.EXTRA_ROOM_ID, rid)
+                                .putExtra(LivePlayerActivity.EXTRA_TITLE, "")
+                                .putExtra(LivePlayerActivity.EXTRA_UNAME, following.name),
+                        )
+                    }
+
+                    if (following.isLive && following.liveRoomId > 0L) {
+                        SingleChoiceDialog.show(
+                            context = requireContext(),
+                            title = getString(R.string.search_user_live_actions_title, following.name),
+                            items =
+                                listOf(
+                                    getString(R.string.search_user_action_enter_live),
+                                    getString(R.string.search_user_action_open_profile),
+                                ),
+                            checkedIndex = 0,
+                            negativeText = getString(android.R.string.cancel),
+                        ) { which, _ ->
+                            when (which) {
+                                0 -> openLive()
+                                else -> openProfile()
+                            }
+                        }
+                    } else {
+                        openProfile()
+                    }
                 }
         }
 

@@ -14,15 +14,37 @@
     android:padding="@dimen/following_grid_item_padding"
     android:stateListAnimator="@animator/blbl_focus_scale">
 
-    <com.google.android.material.imageview.ShapeableImageView
-        android:id="@+id/iv_avatar"
+    <FrameLayout
+        android:id="@+id/fl_avatar"
         android:layout_width="@dimen/following_grid_avatar_size"
         android:layout_height="@dimen/following_grid_avatar_size"
-        android:contentDescription="@string/app_name"
-        android:src="@android:drawable/sym_def_app_icon"
-        app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay_Blbl_Circular"
-        app:strokeColor="@color/blbl_focus_stroke"
-        app:strokeWidth="2dp" />
+        android:clipChildren="false"
+        android:clipToPadding="false">
+
+        <com.google.android.material.imageview.ShapeableImageView
+            android:id="@+id/iv_avatar"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="@string/app_name"
+            android:src="@android:drawable/sym_def_app_icon"
+            app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay_Blbl_Circular"
+            app:strokeColor="@color/blbl_focus_stroke"
+            app:strokeWidth="2dp" />
+
+        <TextView
+            android:id="@+id/tv_badge_live"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="@dimen/video_card_duration_padding_v"
+            android:background="#CCFF3B30"
+            android:paddingHorizontal="@dimen/video_card_duration_padding_h"
+            android:paddingVertical="@dimen/video_card_duration_padding_v"
+            android:text="LIVE"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/video_card_duration_text_size"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <TextView
         android:id="@+id/tv_name"
@@ -48,4 +70,3 @@
         android:textSize="@dimen/following_grid_sign_text_size" />
 
 </LinearLayout>
-
