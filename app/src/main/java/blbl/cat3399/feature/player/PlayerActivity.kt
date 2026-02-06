@@ -65,6 +65,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -175,7 +176,9 @@ class PlayerActivity : BaseActivity() {
     private var danmakuShield: DanmakuShield? = null
     private val danmakuLoadedSegments = LinkedHashSet<Int>()
     private val danmakuLoadingSegments = HashSet<Int>()
-    private val danmakuAll = ArrayList<blbl.cat3399.core.model.Danmaku>()
+    private val danmakuSegmentItems = LinkedHashMap<Int, List<blbl.cat3399.core.model.Danmaku>>()
+    private var danmakuLoadJob: kotlinx.coroutines.Job? = null
+    private var danmakuLoadGeneration: Int = 0
     private var lastDanmakuPrefetchAtMs: Long = 0L
     private var playbackConstraints: PlaybackConstraints = PlaybackConstraints()
     private var decodeFallbackAttempted: Boolean = false
@@ -1109,9 +1112,9 @@ class PlayerActivity : BaseActivity() {
         currentUpName = null
         currentUpAvatar = null
         danmakuShield = null
+        cancelDanmakuLoading(reason = "new_media")
         danmakuLoadedSegments.clear()
-        danmakuLoadingSegments.clear()
-        danmakuAll.clear()
+        danmakuSegmentItems.clear()
         binding.danmakuView.setDanmakus(emptyList())
         binding.danmakuView.notifySeek(0L)
 
@@ -1878,6 +1881,7 @@ class PlayerActivity : BaseActivity() {
         keyScrubEndJob?.cancel()
         relatedVideosFetchJob?.cancel()
         loadJob?.cancel()
+        cancelDanmakuLoading(reason = "destroy")
         loadJob = null
         dismissAutoResumeHint()
         stopReportProgressLoop(flush = false, reason = "destroy")
@@ -4041,12 +4045,12 @@ class PlayerActivity : BaseActivity() {
     }
 
     private fun applyDanmakuMeta(meta: DanmakuMeta) {
+        cancelDanmakuLoading(reason = "meta_update")
         danmakuShield = meta.shield
         danmakuSegmentTotal = meta.segmentTotal
         danmakuSegmentSizeMs = meta.segmentSizeMs.coerceAtLeast(1)
         danmakuLoadedSegments.clear()
-        danmakuLoadingSegments.clear()
-        danmakuAll.clear()
+        danmakuSegmentItems.clear()
     }
 
     private fun requestDanmakuSegmentsForPosition(positionMs: Long, immediate: Boolean) {
@@ -4085,52 +4089,83 @@ class PlayerActivity : BaseActivity() {
             )
         }
 
+        val loadGeneration = danmakuLoadGeneration
+        val requestPositionMs = positionMs
+        val requestCid = cid
+        val requestSegments = toLoad.toList()
+        val debugEnabled = debug
+
+        danmakuLoadJob?.cancel()
+        danmakuLoadJob =
             lifecycleScope.launch(Dispatchers.IO) {
                 val shield = danmakuShield
-                val newItems = ArrayList<blbl.cat3399.core.model.Danmaku>()
-                val loaded = ArrayList<Int>()
-                for (seg in toLoad) {
-                val t0 = SystemClock.elapsedRealtime()
-                val list = runCatching { BiliApi.dmSeg(cid, seg) }.getOrNull()
-                val cost = SystemClock.elapsedRealtime() - t0
-                if (list == null) {
-                    if (debug) AppLog.d("Player", "danmaku seg=$seg fetch failed cost=${cost}ms")
-                    continue
-                }
-                val before = list.size
-                val filtered = if (shield != null) list.filter(shield::allow) else list
-                val after = filtered.size
-                if (debug) {
-                    AppLog.d("Player", "danmaku seg=$seg items=$before kept=$after cost=${cost}ms")
-                }
-                if (before > 0 && after == 0 && debug) {
-                    AppLog.d("Player", "danmaku seg=$seg filteredAll (shield)")
-                }
-                if (filtered.isNotEmpty()) newItems.addAll(filtered)
-                loaded.add(seg)
-                }
-                if (newItems.isNotEmpty()) {
-                    newItems.sortBy { it.timeMs }
-                }
-                withContext(Dispatchers.Main) {
-                    danmakuLoadingSegments.removeAll(toLoad)
-                    danmakuLoadedSegments.addAll(loaded)
-                    if (newItems.isNotEmpty()) {
-                    // Keep cache roughly ordered; avoid sorting on Main (can jank badly on massive danmaku).
-                    val last = danmakuAll.lastOrNull()?.timeMs
-                    if (last == null || newItems.first().timeMs >= last) {
-                        danmakuAll.addAll(newItems)
-                    } else {
-                        danmakuAll.addAll(newItems)
-                        danmakuAll.sortBy { it.timeMs }
+                val loadedSegmentItems = LinkedHashMap<Int, List<blbl.cat3399.core.model.Danmaku>>()
+                val loaded = ArrayList<Int>(requestSegments.size)
+                try {
+                    for (seg in requestSegments) {
+                        val t0 = SystemClock.elapsedRealtime()
+                        val list = runCatching { BiliApi.dmSeg(requestCid, seg) }.getOrNull()
+                        val cost = SystemClock.elapsedRealtime() - t0
+                        if (list == null) {
+                            if (debugEnabled) AppLog.d("Player", "danmaku seg=$seg fetch failed cost=${cost}ms")
+                            continue
+                        }
+                        val before = list.size
+                        val filtered = if (shield != null) list.filter(shield::allow) else list
+                        val sorted = if (filtered.size <= 1) filtered else filtered.sortedBy { it.timeMs }
+                        val after = sorted.size
+                        if (debugEnabled) {
+                            val minMs = sorted.firstOrNull()?.timeMs ?: -1
+                            val maxMs = sorted.lastOrNull()?.timeMs ?: -1
+                            AppLog.d(
+                                "Player",
+                                "danmaku seg=$seg items=$before kept=$after range=${minMs}..${maxMs}ms pos=${requestPositionMs}ms cost=${cost}ms",
+                            )
+                        }
+                        if (before > 0 && after == 0 && debugEnabled) {
+                            AppLog.d("Player", "danmaku seg=$seg filteredAll (shield)")
+                        }
+                        loadedSegmentItems[seg] = sorted
+                        loaded.add(seg)
                     }
-                    trimDanmakuCacheIfNeeded(positionMs)
-                    // Incremental append to avoid clearing currently running danmaku (prevents "sudden disappear").
-                    binding.danmakuView.appendDanmakus(newItems, alreadySorted = true)
-                } else if (debug) {
-                    AppLog.d("Player", "danmaku loadedSegs=${loaded.joinToString()} but no new items (after filter)")
+                } finally {
+                    withContext(NonCancellable + Dispatchers.Main) {
+                        if (loadGeneration != danmakuLoadGeneration || currentCid != requestCid) {
+                            danmakuLoadingSegments.removeAll(requestSegments)
+                            return@withContext
+                        }
+                        danmakuLoadingSegments.removeAll(requestSegments)
+                        danmakuLoadedSegments.addAll(loaded)
+                        if (loaded.isEmpty()) return@withContext
+
+                        var appendedAny = false
+                        for ((seg, items) in loadedSegmentItems) {
+                            danmakuSegmentItems[seg] = items
+                            if (items.isEmpty()) continue
+                            if (debugEnabled) {
+                                AppLog.d("Player", "danmaku append seg=$seg count=${items.size}")
+                            }
+                            binding.danmakuView.appendDanmakus(items, alreadySorted = true)
+                            appendedAny = true
+                        }
+
+                        trimDanmakuCacheIfNeeded(requestPositionMs)
+
+                        if (!appendedAny && debugEnabled) {
+                            AppLog.d("Player", "danmaku loadedSegs=${loaded.joinToString()} but no new items (after filter)")
+                        }
+                    }
                 }
             }
+    }
+
+    private fun cancelDanmakuLoading(reason: String) {
+        danmakuLoadGeneration++
+        danmakuLoadJob?.cancel()
+        danmakuLoadJob = null
+        danmakuLoadingSegments.clear()
+        if (::session.isInitialized && session.debugEnabled) {
+            AppLog.d("Player", "danmaku loading canceled reason=$reason generation=$danmakuLoadGeneration")
         }
     }
 
@@ -4152,9 +4187,11 @@ class PlayerActivity : BaseActivity() {
         val keepSegs = danmakuLoadedSegments.filter { it in minSeg..maxSeg }.toSet()
         if (keepSegs.size == danmakuLoadedSegments.size) return
         danmakuLoadedSegments.retainAll(keepSegs)
-        val filtered = danmakuAll.filter { ((it.timeMs / segSize) + 1) in keepSegs }
-        danmakuAll.clear()
-        danmakuAll.addAll(filtered)
+        val it = danmakuSegmentItems.entries.iterator()
+        while (it.hasNext()) {
+            val seg = it.next().key
+            if (seg !in keepSegs) it.remove()
+        }
 
         // Keep DanmakuView/Engine memory bounded as well, without clearing currently running items.
         val minTimeMs = (minSeg - 1L) * segSize.toLong()

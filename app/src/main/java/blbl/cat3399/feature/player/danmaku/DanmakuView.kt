@@ -1214,9 +1214,9 @@ class DanmakuView @JvmOverloads constructor(
     private fun defaultBitmapPoolMaxBytes(): Long {
         val dm = resources.displayMetrics
         val screenBytes = dm.widthPixels.toLong() * dm.heightPixels.toLong() * 4L
-        val min = 8L * 1024L * 1024L
-        val max = 32L * 1024L * 1024L
-        // Keep at most ~2 screens of danmaku bitmaps; clamp for 4K devices.
-        return (screenBytes * 2L).coerceIn(min, max)
+        val min = 12L * 1024L * 1024L
+        val max = 64L * 1024L * 1024L
+        // Raise pool headroom for dense danmaku scenes; still clamp to avoid runaway memory use.
+        return (screenBytes * 3L).coerceIn(min, max)
     }
 }
