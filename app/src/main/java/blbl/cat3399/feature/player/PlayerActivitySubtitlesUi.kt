@@ -19,10 +19,6 @@ internal fun PlayerActivity.subtitleLangSubtitle(): String {
     if (subtitleItems.isEmpty()) return "无/未加载"
     val prefs = BiliClient.prefs
     val preferred = session.subtitleLangOverride ?: prefs.subtitlePreferredLang
-    if (session.subtitleLangOverride == null) {
-        val resolved = resolveSubtitleLang(preferred)
-        return "全局：$resolved"
-    }
     return resolveSubtitleLang(preferred)
 }
 
@@ -43,37 +39,19 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
         return
     }
     val prefs = BiliClient.prefs
-    val global = prefs.subtitlePreferredLang
     val items =
         buildList {
-            add("跟随全局（${resolveSubtitleLang(global)}）")
             add("自动（取第一个）")
             subtitleItems.forEach { add(it.lanDoc) }
         }
+    val effective = (session.subtitleLangOverride ?: prefs.subtitlePreferredLang).trim()
     val currentLabel =
-        when (val ov = session.subtitleLangOverride) {
-            null -> "跟随全局（${resolveSubtitleLang(global)}）"
-            "auto" -> "自动（取第一个）"
-            else -> subtitleItems.firstOrNull { it.lan.equals(ov, ignoreCase = true) }?.lanDoc ?: subtitleItems.first().lanDoc
+        when {
+            effective.equals("auto", ignoreCase = true) || effective.isBlank() -> "自动（取第一个）"
+            else -> subtitleItems.firstOrNull { it.lan.equals(effective, ignoreCase = true) }?.lanDoc ?: subtitleItems.first().lanDoc
         }
     val checked = items.indexOf(currentLabel).coerceAtLeast(0)
-    SingleChoiceDialog.show(
-        context = this,
-        title = "字幕语言（本次播放）",
-        items = items,
-        checkedIndex = checked,
-        negativeText = "取消",
-    ) { which, _ ->
-        val chosen = items.getOrNull(which).orEmpty()
-        session =
-            when {
-                chosen.startsWith("跟随全局") -> session.copy(subtitleLangOverride = null)
-                chosen.startsWith("自动") -> session.copy(subtitleLangOverride = "auto")
-                else -> {
-                    val code = subtitleItems.firstOrNull { it.lanDoc == chosen }?.lan ?: subtitleItems.first().lan
-                    session.copy(subtitleLangOverride = code)
-                }
-            }
+    val applyAndReload = {
         lifecycleScope.launch {
             subtitleConfig = buildSubtitleConfigFromCurrentSelection(bvid = currentBvid, cid = currentCid)
             subtitleAvailabilityKnown = true
@@ -83,6 +61,29 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
             updateSubtitleButton()
             reloadStream(keepPosition = true)
         }
+    }
+    SingleChoiceDialog.show(
+        context = this,
+        title = "字幕语言（本次播放）",
+        items = items,
+        checkedIndex = checked,
+        negativeText = "取消",
+        neutralText = "默认",
+        onNeutral = {
+            session = session.copy(subtitleLangOverride = null)
+            applyAndReload()
+        },
+    ) { which, _ ->
+        val chosen = items.getOrNull(which).orEmpty()
+        session =
+            when {
+                chosen.startsWith("自动") -> session.copy(subtitleLangOverride = "auto")
+                else -> {
+                    val code = subtitleItems.firstOrNull { it.lanDoc == chosen }?.lan ?: subtitleItems.first().lan
+                    session.copy(subtitleLangOverride = code)
+                }
+            }
+        applyAndReload()
     }
 }
 
@@ -95,7 +96,7 @@ internal fun PlayerActivity.showSubtitleTextSizeDialog() {
             ?: 0
     SingleChoiceDialog.show(
         context = this,
-        title = "字幕字号(sp)",
+        title = "字幕字体大小(sp)",
         items = items.toList(),
         checkedIndex = current,
         negativeText = "取消",

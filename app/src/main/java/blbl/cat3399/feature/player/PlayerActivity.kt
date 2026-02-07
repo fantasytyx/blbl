@@ -561,9 +561,9 @@ class PlayerActivity : BaseActivity() {
                 "播放速度" -> showSpeedDialog()
                 "播放模式" -> showPlaybackModeDialog()
                 "字幕语言" -> showSubtitleLangDialog()
-                "字幕字号" -> showSubtitleTextSizeDialog()
+                "字幕字体大小" -> showSubtitleTextSizeDialog()
                 "弹幕透明度" -> showDanmakuOpacityDialog()
-                "弹幕字号" -> showDanmakuTextSizeDialog()
+                "弹幕字体大小" -> showDanmakuTextSizeDialog()
                 "弹幕速度" -> showDanmakuSpeedDialog()
                 "弹幕区域" -> showDanmakuAreaDialog()
                 "调试信息" -> {
@@ -679,14 +679,7 @@ class PlayerActivity : BaseActivity() {
     }
 
     private fun playbackModeSubtitle(): String {
-        val prefs = BiliClient.prefs
-        val globalLabel = playbackModeLabel(prefs.playerPlaybackMode)
-        val override = session.playbackModeOverride
-        return if (override == null) {
-            "全局：$globalLabel"
-        } else {
-            playbackModeLabel(override)
-        }
+        return playbackModeLabel(resolvedPlaybackMode())
     }
 
     private fun applyPlaybackMode(exo: ExoPlayer) {
@@ -699,26 +692,14 @@ class PlayerActivity : BaseActivity() {
 
     private fun showPlaybackModeDialog() {
         val exo = player ?: return
-        val prefs = BiliClient.prefs
-        val global = prefs.playerPlaybackMode
-        val globalLabel = playbackModeLabel(global)
         val items = listOf(
-            "跟随全局（$globalLabel）",
             "循环当前",
             "播放下一个",
             "播放推荐视频",
             "什么都不做",
             "退出播放器",
         )
-        val currentLabel =
-            when (session.playbackModeOverride) {
-                null -> "跟随全局（$globalLabel）"
-                AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE -> "循环当前"
-                AppPrefs.PLAYER_PLAYBACK_MODE_NEXT -> "播放下一个"
-                AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND -> "播放推荐视频"
-                AppPrefs.PLAYER_PLAYBACK_MODE_EXIT -> "退出播放器"
-                else -> "什么都不做"
-            }
+        val currentLabel = playbackModeLabel(resolvedPlaybackMode())
         val checked = items.indexOf(currentLabel).coerceAtLeast(0)
         SingleChoiceDialog.show(
             context = this,
@@ -726,11 +707,16 @@ class PlayerActivity : BaseActivity() {
             items = items,
             checkedIndex = checked,
             negativeText = "取消",
+            neutralText = "默认",
+            onNeutral = {
+                session = session.copy(playbackModeOverride = null)
+                applyPlaybackMode(exo)
+                refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
+            },
         ) { which, _ ->
             val chosen = items.getOrNull(which).orEmpty()
             session =
                 when {
-                    chosen.startsWith("跟随全局") -> session.copy(playbackModeOverride = null)
                     chosen.startsWith("循环") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_LOOP_ONE)
                     chosen.startsWith("播放下一个") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_NEXT)
                     chosen.startsWith("播放推荐") -> session.copy(playbackModeOverride = AppPrefs.PLAYER_PLAYBACK_MODE_RECOMMEND)
@@ -3520,9 +3506,9 @@ class PlayerActivity : BaseActivity() {
                 PlayerSettingsAdapter.SettingItem("播放速度", String.format(Locale.US, "%.2fx", session.playbackSpeed)),
                 PlayerSettingsAdapter.SettingItem("播放模式", playbackModeSubtitle()),
                 PlayerSettingsAdapter.SettingItem("字幕语言", subtitleLangSubtitle()),
-                PlayerSettingsAdapter.SettingItem("字幕字号", session.subtitleTextSizeSp.toInt().toString()),
+                PlayerSettingsAdapter.SettingItem("字幕字体大小", session.subtitleTextSizeSp.toInt().toString()),
                 PlayerSettingsAdapter.SettingItem("弹幕透明度", String.format(Locale.US, "%.2f", session.danmaku.opacity)),
-                PlayerSettingsAdapter.SettingItem("弹幕字号", session.danmaku.textSizeSp.toInt().toString()),
+                PlayerSettingsAdapter.SettingItem("弹幕字体大小", session.danmaku.textSizeSp.toInt().toString()),
                 PlayerSettingsAdapter.SettingItem("弹幕速度", session.danmaku.speedLevel.toString()),
                 PlayerSettingsAdapter.SettingItem("弹幕区域", areaText(session.danmaku.area)),
                 PlayerSettingsAdapter.SettingItem("调试信息", if (session.debugEnabled) "开" else "关"),

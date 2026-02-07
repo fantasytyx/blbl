@@ -31,7 +31,7 @@ internal fun PlayerActivity.showDanmakuTextSizeDialog() {
             ?: 0
     SingleChoiceDialog.show(
         context = this,
-        title = "弹幕字号(sp)",
+        title = "弹幕字体大小(sp)",
         items = items.toList(),
         checkedIndex = current,
         negativeText = "取消",
@@ -91,4 +91,3 @@ internal fun PlayerActivity.showDanmakuAreaDialog() {
         refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
     }
 }
-
