@@ -27,6 +27,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiSeason
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.enableDpadTabFocus
@@ -80,8 +81,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     private var currentLiveOrder: LiveOrder = LiveOrder.Online
     private var currentUserOrder: UserOrder = UserOrder.Default
     private var pendingFocusFirstResultCardFromTabSwitch: Boolean = false
-    private var pendingFocusNextResultCardAfterLoadMoreFromDpad: Boolean = false
-    private var pendingFocusNextResultCardAfterLoadMoreFromPos: Int = RecyclerView.NO_POSITION
+    private var resultsGridController: DpadGridController? = null
     private var pendingRestoreMediaPos: Int? = null
 
     private val loadedBvids = HashSet<String>()
@@ -574,106 +574,42 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         binding.recyclerResults.setHasFixedSize(true)
         binding.recyclerResults.layoutManager = GridLayoutManager(requireContext(), spanCountForCurrentTab())
         (binding.recyclerResults.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
-        binding.recyclerResults.addOnChildAttachStateChangeListener(
-            object : RecyclerView.OnChildAttachStateChangeListener {
-	                override fun onChildViewAttachedToWindow(view: View) {
-	                    view.setOnKeyListener { v, keyCode, event ->
-	                        if (
-	                            keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-	                            keyCode == KeyEvent.KEYCODE_ENTER ||
-	                            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-	                        ) {
-	                            val handled = (v.getTag(R.id.tag_long_press_handled) as? Boolean) == true
-	                            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) {
-	                                if (!handled) {
-	                                    v.setTag(R.id.tag_long_press_handled, true)
-	                                    v.performLongClick()
-	                                }
-	                                return@setOnKeyListener true
-	                            }
-	                            if (event.action == KeyEvent.ACTION_UP && handled) {
-	                                v.setTag(R.id.tag_long_press_handled, false)
-	                                return@setOnKeyListener true
-	                            }
-	                        }
+        resultsGridController?.release()
+        resultsGridController =
+            DpadGridController(
+                recyclerView = binding.recyclerResults,
+                callbacks =
+                    object : DpadGridController.Callbacks {
+                        override fun onTopEdge(): Boolean {
+                            focusSelectedTab()
+                            return true
+                        }
 
-		                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-		                        if (binding.panelResults.visibility != View.VISIBLE) return@setOnKeyListener false
-	
-		                        val lm = binding.recyclerResults.layoutManager as? GridLayoutManager ?: return@setOnKeyListener false
-		                        val holder = binding.recyclerResults.findContainingViewHolder(v) ?: return@setOnKeyListener false
-	                        val pos = holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnKeyListener false
+                        override fun onLeftEdge(): Boolean {
+                            return switchToPrevTabFromContentEdge()
+                        }
 
-	                        when (keyCode) {
-	                            KeyEvent.KEYCODE_DPAD_UP -> {
-	                                if (!binding.recyclerResults.canScrollVertically(-1)) {
-	                                    if (pos < lm.spanCount) {
-	                                        focusSelectedTab()
-	                                        return@setOnKeyListener true
-	                                    }
-	                                }
-	                                false
-	                            }
+                        override fun onRightEdge() {
+                            switchToNextTabFromContentEdge()
+                        }
 
-	                            KeyEvent.KEYCODE_DPAD_LEFT -> {
-	                                val itemView = binding.recyclerResults.findContainingItemView(v) ?: return@setOnKeyListener false
-	                                val next = FocusFinder.getInstance().findNextFocus(binding.recyclerResults, itemView, View.FOCUS_LEFT)
-	                                if (next == null || !isDescendantOf(next, binding.recyclerResults)) {
-	                                    val switched = switchToPrevTabFromContentEdge()
-	                                    return@setOnKeyListener switched
-	                                }
-	                                false
-	                            }
+                        override fun canLoadMore(): Boolean {
+                            return !stateForTab(currentTabIndex).endReached
+                        }
 
-	                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-	                                val itemView = binding.recyclerResults.findContainingItemView(v) ?: return@setOnKeyListener false
-	                                val next = FocusFinder.getInstance().findNextFocus(binding.recyclerResults, itemView, View.FOCUS_RIGHT)
-	                                if (next == null || !isDescendantOf(next, binding.recyclerResults)) {
-	                                    if (switchToNextTabFromContentEdge()) return@setOnKeyListener true
-	                                    return@setOnKeyListener true
-	                                }
-	                                false
-	                            }
-
-	                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-	                                val itemView = binding.recyclerResults.findContainingItemView(v) ?: return@setOnKeyListener false
-	                                val next = FocusFinder.getInstance().findNextFocus(binding.recyclerResults, itemView, View.FOCUS_DOWN)
-	                                if (next == null || !isDescendantOf(next, binding.recyclerResults)) {
-	                                    if (binding.recyclerResults.canScrollVertically(1)) {
-	                                        // Focus-search failed but the list can still scroll; scroll a bit to let
-	                                        // RecyclerView lay out the next row, and keep focus inside the list.
-	                                        val dy = (itemView.height * 0.8f).toInt().coerceAtLeast(1)
-	                                        binding.recyclerResults.scrollBy(0, dy)
-	                                        binding.recyclerResults.post {
-	                                            if (_binding == null) return@post
-	                                            tryFocusNextDownFromCurrentResult()
-	                                        }
-	                                        return@setOnKeyListener true
-	                                    }
-
-	                                    // Bottom edge: keep focus inside the list (avoid escaping to sidebar) and
-	                                    // trigger loading more if possible.
-	                                    if (!stateForTab(currentTabIndex).endReached) {
-	                                        pendingFocusNextResultCardAfterLoadMoreFromDpad = true
-	                                        pendingFocusNextResultCardAfterLoadMoreFromPos = pos
-	                                        loadNextPage()
-	                                    }
-	                                    return@setOnKeyListener true
-	                                }
-	                                false
-	                            }
-
-	                            else -> false
-	                        }
-                    }
-                }
-	
-	                override fun onChildViewDetachedFromWindow(view: View) {
-	                    view.setOnKeyListener(null)
-	                    view.setTag(R.id.tag_long_press_handled, false)
-	                }
-	            },
-	        )
+                        override fun loadMore() {
+                            loadNextPage()
+                        }
+                    },
+                config =
+                    DpadGridController.Config(
+                        isEnabled = {
+                            val b = _binding
+                            b != null && isResumed && b.panelResults.visibility == View.VISIBLE
+                        },
+                        enableCenterLongPressToLongClick = true,
+                    ),
+            ).also { it.install() }
         binding.recyclerResults.clearOnScrollListeners()
         binding.recyclerResults.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
@@ -1069,7 +1005,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
         val b = _binding ?: return
         if (b.panelResults.visibility != View.VISIBLE) return
         clearLoadedForTab(currentTabIndex)
-        clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
+        resultsGridController?.clearPendingFocusAfterLoadMore()
         val state = stateForTab(currentTabIndex)
         state.endReached = false
         state.isLoadingMore = false
@@ -1176,7 +1112,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 
                 _binding?.recyclerResults?.post {
                     maybeConsumePendingFocusFirstResultCardFromTabSwitch()
-                    maybeConsumePendingFocusNextResultCardAfterLoadMoreFromDpad()
+                    resultsGridController?.consumePendingFocusAfterLoadMore()
                 }
             } catch (t: Throwable) {
                 AppLog.e("Search", "load failed tab=${tab.name} page=${state.page}", t)
@@ -1187,75 +1123,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
 	            }
 	        }
 	    }
-
-    private fun clearPendingFocusNextResultCardAfterLoadMoreFromDpad() {
-        pendingFocusNextResultCardAfterLoadMoreFromDpad = false
-        pendingFocusNextResultCardAfterLoadMoreFromPos = RecyclerView.NO_POSITION
-    }
-
-    private fun maybeConsumePendingFocusNextResultCardAfterLoadMoreFromDpad(): Boolean {
-        if (!pendingFocusNextResultCardAfterLoadMoreFromDpad) return false
-        val b = _binding
-        if (b == null || !isResumed) {
-            clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val recycler = b.recyclerResults
-        val adapter = recycler.adapter
-        if (adapter == null) {
-            clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
-            return false
-        }
-        val lm = recycler.layoutManager as? GridLayoutManager
-        if (lm == null) {
-            clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val anchorPos = pendingFocusNextResultCardAfterLoadMoreFromPos
-        if (anchorPos == RecyclerView.NO_POSITION) {
-            clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val focused = activity?.currentFocus
-        if (focused != null && !isDescendantOf(focused, recycler)) {
-            clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val spanCount = lm.spanCount.coerceAtLeast(1)
-        val itemCount = adapter.itemCount
-        val candidatePos =
-            when {
-                anchorPos + spanCount in 0 until itemCount -> anchorPos + spanCount
-                anchorPos + 1 in 0 until itemCount -> anchorPos + 1
-                else -> null
-            }
-        clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
-        if (candidatePos == null) return false
-
-        recycler.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus()
-            ?: run {
-                recycler.scrollToPosition(candidatePos)
-                recycler.post { recycler.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus() }
-            }
-        return true
-    }
-
-    private fun tryFocusNextDownFromCurrentResult() {
-        val b = _binding ?: return
-        if (!isResumed) return
-        val recycler = b.recyclerResults
-        val focused = activity?.currentFocus ?: return
-        if (!isDescendantOf(focused, recycler)) return
-        val itemView = recycler.findContainingItemView(focused) ?: return
-        val next = FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, recycler)) {
-            next.requestFocus()
-        }
-    }
 
     private fun showSortDialog() {
         when (tabForIndex(currentTabIndex)) {
@@ -1385,7 +1252,8 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     override fun onDestroyView() {
         suggestJob?.cancel()
         suggestJob = null
-        clearPendingFocusNextResultCardAfterLoadMoreFromDpad()
+        resultsGridController?.release()
+        resultsGridController = null
         lastAppliedUiScale = null
         _binding = null
         super.onDestroyView()

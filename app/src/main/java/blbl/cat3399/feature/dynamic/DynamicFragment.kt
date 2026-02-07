@@ -2,8 +2,6 @@ package blbl.cat3399.feature.dynamic
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.FocusFinder
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -17,6 +15,7 @@ import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentDynamicBinding
 import blbl.cat3399.databinding.FragmentDynamicLoginBinding
@@ -47,8 +46,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
     private var nextOffset: String? = null
     private var nextPage: Int = 1
     private var requestToken: Int = 0
-    private var pendingFocusNextCardAfterLoadMoreFromDpad: Boolean = false
-    private var pendingFocusNextCardAfterLoadMoreFromPos: Int = RecyclerView.NO_POSITION
+    private var dynamicGridController: DpadGridController? = null
 
     private var userMid: Long = 0L
     private var followPage: Int = 1
@@ -56,8 +54,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
     private var followEndReached: Boolean = false
     private var followRequestToken: Int = 0
     private val loadedFollowMids = HashSet<Long>()
-    private var pendingFocusNextFollowingAfterLoadMoreFromDpad: Boolean = false
-    private var pendingFocusNextFollowingAfterLoadMoreFromPos: Int = RecyclerView.NO_POSITION
+    private var followingListController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         if (!loggedIn) {
@@ -95,55 +92,36 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
                 }
             },
         )
-        binding.recyclerFollowing.addOnChildAttachStateChangeListener(
-            object : RecyclerView.OnChildAttachStateChangeListener {
-                override fun onChildViewAttachedToWindow(view: View) {
-                    view.setOnKeyListener { v, keyCode, event ->
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                val recycler = binding.recyclerFollowing
-                                val itemView = recycler.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_DOWN)
-                                if (next == null || !isDescendantOf(next, recycler)) {
-                                    if (recycler.canScrollVertically(1)) {
-                                        val dy = (itemView.height * 0.8f).toInt().coerceAtLeast(1)
-                                        recycler.scrollBy(0, dy)
-                                        recycler.post {
-                                            if (_binding == null) return@post
-                                            tryFocusNextDownFromCurrentFollowing()
-                                        }
-                                        return@setOnKeyListener true
-                                    }
-                                    if (!followEndReached) {
-                                        val holder = recycler.findContainingViewHolder(v)
-                                        val pos =
-                                            holder?.bindingAdapterPosition
-                                                ?.takeIf { it != RecyclerView.NO_POSITION }
-                                                ?: RecyclerView.NO_POSITION
-                                        if (pos != RecyclerView.NO_POSITION) {
-                                            pendingFocusNextFollowingAfterLoadMoreFromDpad = true
-                                            pendingFocusNextFollowingAfterLoadMoreFromPos = pos
-                                        }
-                                        loadMoreFollowings()
-                                        return@setOnKeyListener true
-                                    }
-                                    // Already at end: consume DPAD_DOWN to keep focus from escaping to other panels.
-                                    return@setOnKeyListener true
-                                }
-                                false
-                            }
-
-                            else -> false
+        followingListController?.release()
+        followingListController =
+            DpadGridController(
+                recyclerView = binding.recyclerFollowing,
+                callbacks =
+                    object : DpadGridController.Callbacks {
+                        override fun onTopEdge(): Boolean {
+                            // No header/tab in Dynamic. Keep focus inside the list.
+                            return false
                         }
-                    }
-                }
 
-                override fun onChildViewDetachedFromWindow(view: View) {
-                    view.setOnKeyListener(null)
-                }
-            },
-        )
+                        override fun onLeftEdge(): Boolean {
+                            // Let MainActivity handle entering sidebar when appropriate.
+                            return false
+                        }
+
+                        override fun onRightEdge() = Unit
+
+                        override fun canLoadMore(): Boolean = !followEndReached
+
+                        override fun loadMore() {
+                            loadMoreFollowings()
+                        }
+                    },
+                config =
+                    DpadGridController.Config(
+                        isEnabled = { _binding != null && isResumed },
+                        consumeRightEdge = false,
+                    ),
+            ).also { it.install() }
         applyUiMode()
 
         videoAdapter =
@@ -193,72 +171,35 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
         binding.recyclerDynamic.layoutManager = GridLayoutManager(requireContext(), spanCountForWidth())
         binding.recyclerDynamic.adapter = videoAdapter
         (binding.recyclerDynamic.itemAnimator as? androidx.recyclerview.widget.SimpleItemAnimator)?.supportsChangeAnimations = false
-        binding.recyclerDynamic.addOnChildAttachStateChangeListener(
-            object : RecyclerView.OnChildAttachStateChangeListener {
-                override fun onChildViewAttachedToWindow(view: View) {
-                    view.setOnKeyListener { v, keyCode, event ->
-                        if (
-                            keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                            keyCode == KeyEvent.KEYCODE_ENTER ||
-                            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                        ) {
-                            val handled = (v.getTag(R.id.tag_long_press_handled) as? Boolean) == true
-                            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0) {
-                                if (!handled) {
-                                    v.setTag(R.id.tag_long_press_handled, true)
-                                    v.performLongClick()
-                                }
-                                return@setOnKeyListener true
-                            }
-                            if (event.action == KeyEvent.ACTION_UP && handled) {
-                                v.setTag(R.id.tag_long_press_handled, false)
-                                return@setOnKeyListener true
-                            }
+        dynamicGridController?.release()
+        dynamicGridController =
+            DpadGridController(
+                recyclerView = binding.recyclerDynamic,
+                callbacks =
+                    object : DpadGridController.Callbacks {
+                        override fun onTopEdge(): Boolean {
+                            // No header/tab in Dynamic. Keep focus inside the grid.
+                            return false
                         }
 
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                val itemView = binding.recyclerDynamic.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(binding.recyclerDynamic, itemView, View.FOCUS_DOWN)
-                                if (next == null || !isDescendantOf(next, binding.recyclerDynamic)) {
-                                    if (binding.recyclerDynamic.canScrollVertically(1)) {
-                                        // Focus-search failed but the list can still scroll; scroll a bit to let
-                                        // RecyclerView lay out the next row, and keep focus inside the list.
-                                        val dy = (itemView.height * 0.8f).toInt().coerceAtLeast(1)
-                                        binding.recyclerDynamic.scrollBy(0, dy)
-                                        binding.recyclerDynamic.post {
-                                            if (_binding == null) return@post
-                                            tryFocusNextDownFromCurrent()
-                                        }
-                                        return@setOnKeyListener true
-                                    }
-                                    val holder = binding.recyclerDynamic.findContainingViewHolder(v)
-                                    val pos =
-                                        holder?.bindingAdapterPosition
-                                            ?.takeIf { it != RecyclerView.NO_POSITION }
-                                            ?: RecyclerView.NO_POSITION
-                                    if (pos != RecyclerView.NO_POSITION) {
-                                        pendingFocusNextCardAfterLoadMoreFromDpad = true
-                                        pendingFocusNextCardAfterLoadMoreFromPos = pos
-                                    }
-                                    loadMoreFeed()
-                                    return@setOnKeyListener true
-                                }
-                                false
-                            }
-
-                            else -> false
+                        override fun onLeftEdge(): Boolean {
+                            return focusSelectedFollowingIfAvailable()
                         }
-                    }
-                }
 
-                override fun onChildViewDetachedFromWindow(view: View) {
-                    view.setOnKeyListener(null)
-                    view.setTag(R.id.tag_long_press_handled, false)
-                }
-            },
-        )
+                        override fun onRightEdge() = Unit
+
+                        override fun canLoadMore(): Boolean = !endReached
+
+                        override fun loadMore() {
+                            loadMoreFeed()
+                        }
+                    },
+                config =
+                    DpadGridController.Config(
+                        isEnabled = { _binding != null && isResumed },
+                        enableCenterLongPressToLongClick = true,
+                    ),
+            ).also { it.install() }
         binding.recyclerDynamic.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
@@ -327,6 +268,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
         followPage = 1
         followEndReached = false
         followIsLoadingMore = false
+        followingListController?.clearPendingFocusAfterLoadMore()
         val token = ++followRequestToken
         if (selectedMid == 0L) selectedMid = FollowingAdapter.MID_ALL
         followItems = listOf(FollowingAdapter.FollowingUi(FollowingAdapter.MID_ALL, "所有", null, isAll = true))
@@ -381,7 +323,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
                 }
                 followPage = targetPage + 1
                 followEndReached = !res.hasMore
-                _binding?.recyclerFollowing?.post { maybeConsumePendingFocusNextFollowingAfterLoadMoreFromDpad() }
+                _binding?.recyclerFollowing?.post { followingListController?.consumePendingFocusAfterLoadMore() }
             } catch (t: Throwable) {
                 AppLog.e("Dynamic", "load followings failed page=$targetPage", t)
             } finally {
@@ -391,7 +333,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
     }
 
     private fun resetAndLoadFeed() {
-        clearPendingFocusNextCardAfterLoadMoreFromDpad()
+        dynamicGridController?.clearPendingFocusAfterLoadMore()
         loadedBvids.clear()
         nextOffset = null
         nextPage = 1
@@ -436,7 +378,7 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
                     val filtered = page.items.filter { loadedBvids.add(it.bvid) }
                     videoAdapter.append(filtered)
                 }
-                _binding?.recyclerDynamic?.post { maybeConsumePendingFocusNextCardAfterLoadMoreFromDpad() }
+                _binding?.recyclerDynamic?.post { dynamicGridController?.consumePendingFocusAfterLoadMore() }
             } catch (t: Throwable) {
                 AppLog.e("Dynamic", "load feed failed mid=$selectedMid", t)
                 Toast.makeText(requireContext(), "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show()
@@ -462,6 +404,43 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
         }
     }
 
+    private fun focusSelectedFollowingIfAvailable(): Boolean {
+        val b = _binding ?: return false
+        val recyclerFollowing = b.recyclerFollowing
+        recyclerFollowing.post outer@{
+            val binding = _binding ?: return@outer
+            val recycler = binding.recyclerFollowing
+
+            val selectedChild =
+                (0 until recycler.childCount)
+                    .map { recycler.getChildAt(it) }
+                    .firstOrNull { it?.isSelected == true }
+            if (selectedChild != null) {
+                selectedChild.requestFocus()
+                return@outer
+            }
+
+            val vh = recycler.findViewHolderForAdapterPosition(0)
+            if (vh != null) {
+                vh.itemView.requestFocus()
+                return@outer
+            }
+
+            if ((recycler.adapter?.itemCount ?: 0) <= 0) {
+                recycler.requestFocus()
+                return@outer
+            }
+
+            recycler.scrollToPosition(0)
+            recycler.post inner@{
+                val b2 = _binding ?: return@inner
+                val recycler2 = b2.recyclerFollowing
+                recycler2.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler2.requestFocus()
+            }
+        }
+        return true
+    }
+
     private fun isDescendantOf(view: View, ancestor: View): Boolean {
         var current: View? = view
         while (current != null) {
@@ -471,137 +450,12 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
         return false
     }
 
-    private fun clearPendingFocusNextCardAfterLoadMoreFromDpad() {
-        pendingFocusNextCardAfterLoadMoreFromDpad = false
-        pendingFocusNextCardAfterLoadMoreFromPos = RecyclerView.NO_POSITION
-    }
-
-    private fun maybeConsumePendingFocusNextCardAfterLoadMoreFromDpad(): Boolean {
-        if (!pendingFocusNextCardAfterLoadMoreFromDpad) return false
-        val binding = _binding
-        if (binding == null || !isResumed || !this::videoAdapter.isInitialized) {
-            clearPendingFocusNextCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val recycler = binding.recyclerDynamic
-        val lm = recycler.layoutManager as? GridLayoutManager
-        if (lm == null) {
-            clearPendingFocusNextCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val anchorPos = pendingFocusNextCardAfterLoadMoreFromPos
-        if (anchorPos == RecyclerView.NO_POSITION) {
-            clearPendingFocusNextCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val focused = activity?.currentFocus
-        if (focused != null && !isDescendantOf(focused, recycler)) {
-            clearPendingFocusNextCardAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val spanCount = lm.spanCount.coerceAtLeast(1)
-        val itemCount = videoAdapter.itemCount
-        val candidatePos =
-            when {
-                anchorPos + spanCount in 0 until itemCount -> anchorPos + spanCount
-                anchorPos + 1 in 0 until itemCount -> anchorPos + 1
-                else -> null
-            }
-        clearPendingFocusNextCardAfterLoadMoreFromDpad()
-        if (candidatePos == null) return false
-
-        recycler.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus()
-            ?: run {
-                recycler.scrollToPosition(candidatePos)
-                recycler.post { recycler.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus() }
-            }
-        return true
-    }
-
-    private fun tryFocusNextDownFromCurrent() {
-        val binding = _binding ?: return
-        if (!isResumed) return
-        val recycler = binding.recyclerDynamic
-        val focused = activity?.currentFocus ?: return
-        if (!isDescendantOf(focused, recycler)) return
-        val itemView = recycler.findContainingItemView(focused) ?: return
-        val next = FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, recycler)) {
-            next.requestFocus()
-        }
-    }
-
-    private fun clearPendingFocusNextFollowingAfterLoadMoreFromDpad() {
-        pendingFocusNextFollowingAfterLoadMoreFromDpad = false
-        pendingFocusNextFollowingAfterLoadMoreFromPos = RecyclerView.NO_POSITION
-    }
-
-    private fun maybeConsumePendingFocusNextFollowingAfterLoadMoreFromDpad(): Boolean {
-        if (!pendingFocusNextFollowingAfterLoadMoreFromDpad) return false
-        val binding = _binding
-        if (binding == null || !isResumed || !this::followAdapter.isInitialized) {
-            clearPendingFocusNextFollowingAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val recycler = binding.recyclerFollowing
-        val lm = recycler.layoutManager as? LinearLayoutManager
-        if (lm == null) {
-            clearPendingFocusNextFollowingAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val anchorPos = pendingFocusNextFollowingAfterLoadMoreFromPos
-        if (anchorPos == RecyclerView.NO_POSITION) {
-            clearPendingFocusNextFollowingAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val focused = activity?.currentFocus
-        if (focused != null && !isDescendantOf(focused, recycler)) {
-            clearPendingFocusNextFollowingAfterLoadMoreFromDpad()
-            return false
-        }
-
-        val itemCount = followAdapter.itemCount
-        val candidatePos =
-            when {
-                anchorPos + 1 in 0 until itemCount -> anchorPos + 1
-                anchorPos in 0 until itemCount -> anchorPos
-                else -> null
-            }
-        clearPendingFocusNextFollowingAfterLoadMoreFromDpad()
-        if (candidatePos == null) return false
-
-        recycler.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus()
-            ?: run {
-                recycler.scrollToPosition(candidatePos)
-                recycler.post { recycler.findViewHolderForAdapterPosition(candidatePos)?.itemView?.requestFocus() }
-            }
-        return true
-    }
-
-    private fun tryFocusNextDownFromCurrentFollowing() {
-        val binding = _binding ?: return
-        if (!isResumed) return
-        val recycler = binding.recyclerFollowing
-        val focused = activity?.currentFocus ?: return
-        if (!isDescendantOf(focused, recycler)) return
-        val itemView = recycler.findContainingItemView(focused) ?: return
-        val next = FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, recycler)) {
-            next.requestFocus()
-        }
-    }
-
     override fun onDestroyView() {
         _bindingLogin = null
-        clearPendingFocusNextCardAfterLoadMoreFromDpad()
-        clearPendingFocusNextFollowingAfterLoadMoreFromDpad()
+        dynamicGridController?.release()
+        dynamicGridController = null
+        followingListController?.release()
+        followingListController = null
         followRequestToken++
         _binding = null
         super.onDestroyView()

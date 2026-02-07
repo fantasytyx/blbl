@@ -3,7 +3,6 @@ package blbl.cat3399.feature.following
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.os.Bundle
-import android.view.FocusFinder
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Toast
@@ -20,6 +19,7 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.ActivityStackLimiter
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.ActivityUpDetailBinding
@@ -49,8 +49,7 @@ class UpDetailActivity : BaseActivity() {
     private var requestToken: Int = 0
 
     private var pendingFocusFirstItemAfterLoad: Boolean = false
-    private var pendingFocusNextCardAfterLoadMoreFromDpad: Boolean = false
-    private var pendingFocusNextCardAfterLoadMoreFromPos: Int = RecyclerView.NO_POSITION
+    private var dpadGridController: DpadGridController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -143,68 +142,40 @@ class UpDetailActivity : BaseActivity() {
                 }
             },
         )
-        binding.recycler.addOnChildAttachStateChangeListener(
-            object : RecyclerView.OnChildAttachStateChangeListener {
-                override fun onChildViewAttachedToWindow(view: View) {
-                    view.setOnKeyListener { v, keyCode, event ->
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_UP -> {
-                                if (!binding.recycler.canScrollVertically(-1)) {
-                                    val lm = binding.recycler.layoutManager as? GridLayoutManager ?: return@setOnKeyListener false
-                                    val holder = binding.recycler.findContainingViewHolder(v) ?: return@setOnKeyListener false
-                                    val pos = holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnKeyListener false
-                                    if (pos < lm.spanCount) {
-                                        if (binding.btnFollow.isVisible) {
-                                            binding.btnFollow.requestFocus()
-                                        } else {
-                                            binding.btnBack.requestFocus()
-                                        }
-                                        return@setOnKeyListener true
-                                    }
-                                }
-                                false
+        dpadGridController?.release()
+        dpadGridController =
+            DpadGridController(
+                recyclerView = binding.recycler,
+                callbacks =
+                    object : DpadGridController.Callbacks {
+                        override fun onTopEdge(): Boolean {
+                            if (binding.btnFollow.isVisible) {
+                                binding.btnFollow.requestFocus()
+                            } else {
+                                binding.btnBack.requestFocus()
                             }
-
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                val itemView = binding.recycler.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_DOWN)
-                                if (next == null || !isDescendantOf(next, binding.recycler)) {
-                                    if (binding.recycler.canScrollVertically(1)) {
-                                        val dy = (itemView.height * 0.8f).toInt().coerceAtLeast(1)
-                                        binding.recycler.scrollBy(0, dy)
-                                        binding.recycler.post {
-                                            if (!isFinishing && !isDestroyed) tryFocusNextDownFromCurrent()
-                                        }
-                                        return@setOnKeyListener true
-                                    }
-                                    if (!endReached) {
-                                        val holder = binding.recycler.findContainingViewHolder(v)
-                                        val pos =
-                                            holder?.bindingAdapterPosition
-                                                ?.takeIf { it != RecyclerView.NO_POSITION }
-                                                ?: RecyclerView.NO_POSITION
-                                        if (pos != RecyclerView.NO_POSITION) {
-                                            pendingFocusNextCardAfterLoadMoreFromDpad = true
-                                            pendingFocusNextCardAfterLoadMoreFromPos = pos
-                                        }
-                                        loadMoreFeed()
-                                        return@setOnKeyListener true
-                                    }
-                                }
-                                false
-                            }
-
-                            else -> false
+                            return true
                         }
-                    }
-                }
 
-                override fun onChildViewDetachedFromWindow(view: View) {
-                    view.setOnKeyListener(null)
-                }
-            },
-        )
+                        override fun onLeftEdge(): Boolean {
+                            // Allow default focus-search to reach header widgets if appropriate.
+                            return false
+                        }
+
+                        override fun onRightEdge() = Unit
+
+                        override fun canLoadMore(): Boolean = !endReached
+
+                        override fun loadMore() {
+                            loadMoreFeed()
+                        }
+                    },
+                config =
+                    DpadGridController.Config(
+                        isEnabled = { !isFinishing && !isDestroyed },
+                        enableCenterLongPressToLongClick = true,
+                    ),
+            ).also { it.install() }
 
         binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
         resetAndLoad()
@@ -235,6 +206,8 @@ class UpDetailActivity : BaseActivity() {
     }
 
     override fun onDestroy() {
+        dpadGridController?.release()
+        dpadGridController = null
         ActivityStackLimiter.unregister(group = ACTIVITY_STACK_GROUP, activity = this)
         super.onDestroy()
     }
@@ -289,8 +262,7 @@ class UpDetailActivity : BaseActivity() {
         endReached = false
         isLoadingMore = false
         pendingFocusFirstItemAfterLoad = true
-        pendingFocusNextCardAfterLoadMoreFromDpad = false
-        pendingFocusNextCardAfterLoadMoreFromPos = RecyclerView.NO_POSITION
+        dpadGridController?.clearPendingFocusAfterLoadMore()
         adapter.submit(emptyList())
         binding.swipeRefresh.isRefreshing = true
         loadHeader()
@@ -342,7 +314,7 @@ class UpDetailActivity : BaseActivity() {
 
                 binding.recycler.post {
                     maybeConsumePendingFocusFirstItemAfterLoad()
-                    maybeConsumePendingFocusNextCardAfterLoadMoreFromDpad()
+                    dpadGridController?.consumePendingFocusAfterLoadMore()
                 }
             } catch (t: Throwable) {
                 AppLog.e("UpDetail", "loadFeed failed mid=$mid page=$targetPage", t)
@@ -443,26 +415,6 @@ class UpDetailActivity : BaseActivity() {
         if (adapter.itemCount <= 0) return
         pendingFocusFirstItemAfterLoad = false
         focusGridAt(0)
-    }
-
-    private fun maybeConsumePendingFocusNextCardAfterLoadMoreFromDpad() {
-        if (!pendingFocusNextCardAfterLoadMoreFromDpad) return
-        val pos = pendingFocusNextCardAfterLoadMoreFromPos
-        pendingFocusNextCardAfterLoadMoreFromDpad = false
-        pendingFocusNextCardAfterLoadMoreFromPos = RecyclerView.NO_POSITION
-
-        val lm = binding.recycler.layoutManager as? GridLayoutManager ?: return
-        if (pos == RecyclerView.NO_POSITION) return
-        val nextPos = pos + lm.spanCount
-        if (nextPos < 0 || nextPos >= adapter.itemCount) return
-        focusGridAt(nextPos)
-    }
-
-    private fun tryFocusNextDownFromCurrent() {
-        val focused = currentFocus ?: return
-        val itemView = binding.recycler.findContainingItemView(focused) ?: return
-        val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, binding.recycler)) next.requestFocus()
     }
 
     private fun isDescendantOf(view: View, ancestor: View): Boolean {

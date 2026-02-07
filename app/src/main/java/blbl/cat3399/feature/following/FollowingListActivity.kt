@@ -2,7 +2,6 @@ package blbl.cat3399.feature.following
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.FocusFinder
 import android.view.KeyEvent
 import android.view.View
 import android.widget.Toast
@@ -16,6 +15,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.ActivityFollowingListBinding
@@ -35,8 +35,7 @@ class FollowingListActivity : BaseActivity() {
     private var total: Int = 0
     private val loadedMids = HashSet<Long>()
 
-    private var pendingFocusNextAfterLoadMoreFromDpad: Boolean = false
-    private var pendingFocusNextAfterLoadMoreFromPos: Int = RecyclerView.NO_POSITION
+    private var dpadGridController: DpadGridController? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,64 +77,35 @@ class FollowingListActivity : BaseActivity() {
                 }
             },
         )
-        binding.recycler.addOnChildAttachStateChangeListener(
-            object : RecyclerView.OnChildAttachStateChangeListener {
-                override fun onChildViewAttachedToWindow(view: View) {
-                    view.setOnKeyListener { v, keyCode, event ->
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_UP -> {
-                                if (!binding.recycler.canScrollVertically(-1)) {
-                                    val lm = binding.recycler.layoutManager as? GridLayoutManager ?: return@setOnKeyListener false
-                                    val holder = binding.recycler.findContainingViewHolder(v) ?: return@setOnKeyListener false
-                                    val pos = holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@setOnKeyListener false
-                                    if (pos < lm.spanCount) {
-                                        binding.btnBack.requestFocus()
-                                        return@setOnKeyListener true
-                                    }
-                                }
-                                false
-                            }
-
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                val itemView = binding.recycler.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_DOWN)
-                                if (next == null || !isDescendantOf(next, binding.recycler)) {
-                                    if (binding.recycler.canScrollVertically(1)) {
-                                        val dy = (itemView.height * 0.8f).toInt().coerceAtLeast(1)
-                                        binding.recycler.scrollBy(0, dy)
-                                        binding.recycler.post {
-                                            if (!isFinishing && !isDestroyed) tryFocusNextDownFromCurrent()
-                                        }
-                                        return@setOnKeyListener true
-                                    }
-                                    if (!endReached) {
-                                        val holder = binding.recycler.findContainingViewHolder(v)
-                                        val pos =
-                                            holder?.bindingAdapterPosition
-                                                ?.takeIf { it != RecyclerView.NO_POSITION }
-                                                ?: RecyclerView.NO_POSITION
-                                        if (pos != RecyclerView.NO_POSITION) {
-                                            pendingFocusNextAfterLoadMoreFromDpad = true
-                                            pendingFocusNextAfterLoadMoreFromPos = pos
-                                        }
-                                        loadNextPage()
-                                        return@setOnKeyListener true
-                                    }
-                                }
-                                false
-                            }
-
-                            else -> false
+        dpadGridController?.release()
+        dpadGridController =
+            DpadGridController(
+                recyclerView = binding.recycler,
+                callbacks =
+                    object : DpadGridController.Callbacks {
+                        override fun onTopEdge(): Boolean {
+                            binding.btnBack.requestFocus()
+                            return true
                         }
-                    }
-                }
 
-                override fun onChildViewDetachedFromWindow(view: View) {
-                    view.setOnKeyListener(null)
-                }
-            },
-        )
+                        override fun onLeftEdge(): Boolean {
+                            // Allow default focus-search (e.g. to back button if the system picks it).
+                            return false
+                        }
+
+                        override fun onRightEdge() = Unit
+
+                        override fun canLoadMore(): Boolean = !endReached
+
+                        override fun loadMore() {
+                            loadNextPage()
+                        }
+                    },
+                config =
+                    DpadGridController.Config(
+                        isEnabled = { !isFinishing && !isDestroyed },
+                    ),
+            ).also { it.install() }
 
         binding.swipeRefresh.setOnRefreshListener { resetAndLoad() }
 
@@ -248,30 +218,13 @@ class FollowingListActivity : BaseActivity() {
         }
     }
 
-    private fun tryFocusNextDownFromCurrent() {
-        val focused = currentFocus ?: return
-        val itemView = binding.recycler.findContainingItemView(focused) ?: return
-        val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, binding.recycler)) next.requestFocus()
-    }
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
-    }
-
     private fun resetAndLoad() {
         loadedMids.clear()
         page = 1
         total = 0
         endReached = false
         isLoadingMore = false
-        pendingFocusNextAfterLoadMoreFromDpad = false
-        pendingFocusNextAfterLoadMoreFromPos = RecyclerView.NO_POSITION
+        dpadGridController?.clearPendingFocusAfterLoadMore()
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
     }
@@ -294,7 +247,7 @@ class FollowingListActivity : BaseActivity() {
                 if (currentPage == 1) adapter.submit(filtered) else adapter.append(filtered)
                 page = currentPage + 1
                 endReached = !res.hasMore
-                binding.recycler.post { maybeConsumePendingFocusNextAfterLoadMoreFromDpad() }
+                binding.recycler.post { dpadGridController?.consumePendingFocusAfterLoadMore() }
             } catch (t: Throwable) {
                 AppLog.e("FollowingList", "load failed page=$currentPage", t)
                 Toast.makeText(this@FollowingListActivity, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show()
@@ -327,21 +280,14 @@ class FollowingListActivity : BaseActivity() {
         }
     }
 
-    private fun maybeConsumePendingFocusNextAfterLoadMoreFromDpad() {
-        if (!pendingFocusNextAfterLoadMoreFromDpad) return
-        val pos = pendingFocusNextAfterLoadMoreFromPos
-        pendingFocusNextAfterLoadMoreFromDpad = false
-        pendingFocusNextAfterLoadMoreFromPos = RecyclerView.NO_POSITION
-
-        val lm = binding.recycler.layoutManager as? GridLayoutManager ?: return
-        if (pos == RecyclerView.NO_POSITION) return
-        val nextPos = pos + lm.spanCount
-        if (nextPos < 0 || nextPos >= adapter.itemCount) return
-        focusGridAt(nextPos)
-    }
-
     private fun spanCountForWidth(): Int {
         return followingSpanCountForWidth(this)
+    }
+
+    override fun onDestroy() {
+        dpadGridController?.release()
+        dpadGridController = null
+        super.onDestroy()
     }
 
     private fun isNavKey(keyCode: Int): Boolean {

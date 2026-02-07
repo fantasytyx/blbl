@@ -1,8 +1,6 @@
 package blbl.cat3399.feature.home
 
 import android.os.Bundle
-import android.view.FocusFinder
-import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -18,6 +16,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiSeason
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.feature.my.BangumiFollowAdapter
@@ -46,6 +45,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
 
     private var pendingFocusFirstCardFromTab: Boolean = false
     private var pendingFocusFirstCardFromContentSwitch: Boolean = false
+    private var dpadGridController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentVideoGridBinding.inflate(inflater, container, false)
@@ -66,73 +66,36 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         binding.recycler.layoutManager = GridLayoutManager(requireContext(), spanCountForPgc())
         (binding.recycler.itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         binding.recycler.clearOnScrollListeners()
-        binding.recycler.addOnChildAttachStateChangeListener(
-            object : RecyclerView.OnChildAttachStateChangeListener {
-                override fun onChildViewAttachedToWindow(view: View) {
-                    view.setOnKeyListener { v, keyCode, event ->
-                        if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            KeyEvent.KEYCODE_DPAD_UP -> {
-                                if (!binding.recycler.canScrollVertically(-1)) {
-                                    val lm = binding.recycler.layoutManager as? GridLayoutManager ?: return@setOnKeyListener false
-                                    val holder = binding.recycler.findContainingViewHolder(v) ?: return@setOnKeyListener false
-                                    val pos =
-                                        holder.bindingAdapterPosition
-                                            .takeIf { it != RecyclerView.NO_POSITION }
-                                            ?: return@setOnKeyListener false
-                                    if (pos < lm.spanCount) {
-                                        focusSelectedTabIfAvailable()
-                                        return@setOnKeyListener true
-                                    }
-                                }
-                                false
-                            }
-
-                            KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                val itemView = binding.recycler.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_LEFT)
-                                if (next == null || !isDescendantOf(next, binding.recycler)) {
-                                    val switched = switchToPrevTabFromContentEdge()
-                                    return@setOnKeyListener switched
-                                }
-                                false
-                            }
-
-                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                val itemView = binding.recycler.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_RIGHT)
-                                if (next == null || !isDescendantOf(next, binding.recycler)) {
-                                    if (switchToNextTabFromContentEdge()) return@setOnKeyListener true
-                                    return@setOnKeyListener true
-                                }
-                                false
-                            }
-
-                            KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                val itemView = binding.recycler.findContainingItemView(v) ?: return@setOnKeyListener false
-                                val next = FocusFinder.getInstance().findNextFocus(binding.recycler, itemView, View.FOCUS_DOWN)
-                                if (next == null || !isDescendantOf(next, binding.recycler)) {
-                                    if (binding.recycler.canScrollVertically(1)) {
-                                        val dy = (itemView.height * 0.8f).toInt().coerceAtLeast(1)
-                                        binding.recycler.scrollBy(0, dy)
-                                        return@setOnKeyListener true
-                                    }
-                                    if (hasNext) loadNextPage()
-                                    return@setOnKeyListener true
-                                }
-                                false
-                            }
-
-                            else -> false
+        dpadGridController?.release()
+        dpadGridController =
+            DpadGridController(
+                recyclerView = binding.recycler,
+                callbacks =
+                    object : DpadGridController.Callbacks {
+                        override fun onTopEdge(): Boolean {
+                            focusSelectedTabIfAvailable()
+                            return true
                         }
-                    }
-                }
 
-                override fun onChildViewDetachedFromWindow(view: View) {
-                    view.setOnKeyListener(null)
-                }
-            },
-        )
+                        override fun onLeftEdge(): Boolean {
+                            return switchToPrevTabFromContentEdge()
+                        }
+
+                        override fun onRightEdge() {
+                            switchToNextTabFromContentEdge()
+                        }
+
+                        override fun canLoadMore(): Boolean = hasNext
+
+                        override fun loadMore() {
+                            loadNextPage()
+                        }
+                    },
+                config =
+                    DpadGridController.Config(
+                        isEnabled = { _binding != null && isResumed },
+                    ),
+            ).also { it.install() }
         binding.recycler.addOnScrollListener(
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
@@ -273,7 +236,10 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
                 val filtered = res.items.filter { loadedSeasonIds.add(it.seasonId) }
                 if (isRefresh) adapter.submit(filtered) else adapter.append(filtered)
 
-                _binding?.recycler?.post { maybeConsumePendingFocusFirstCard() }
+                _binding?.recycler?.post {
+                    maybeConsumePendingFocusFirstCard()
+                    dpadGridController?.consumePendingFocusAfterLoadMore()
+                }
                 restoreFocusIfNeeded()
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
@@ -380,6 +346,8 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         pendingRestorePosition = null
         pendingFocusFirstCardFromTab = false
         pendingFocusFirstCardFromContentSwitch = false
+        dpadGridController?.release()
+        dpadGridController = null
         _binding = null
         super.onDestroyView()
     }
