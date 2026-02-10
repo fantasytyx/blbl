@@ -6,6 +6,33 @@ import java.util.Date
 import java.util.Locale
 
 object Format {
+    private val sdfHmChina =
+        object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("HH:mm", Locale.CHINA)
+        }
+
+    private val sdfYmdChina =
+        object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
+        }
+
+    private val sdfYMdChina =
+        object : ThreadLocal<SimpleDateFormat>() {
+            override fun initialValue(): SimpleDateFormat = SimpleDateFormat("yyyy.M.d", Locale.CHINA)
+        }
+
+    private fun sdfHm(): SimpleDateFormat =
+        sdfHmChina.get()
+            ?: SimpleDateFormat("HH:mm", Locale.CHINA).also { sdfHmChina.set(it) }
+
+    private fun sdfYmd(): SimpleDateFormat =
+        sdfYmdChina.get()
+            ?: SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).also { sdfYmdChina.set(it) }
+
+    private fun sdfYMd(): SimpleDateFormat =
+        sdfYMdChina.get()
+            ?: SimpleDateFormat("yyyy.M.d", Locale.CHINA).also { sdfYMdChina.set(it) }
+
     fun duration(sec: Int): String {
         val s = if (sec < 0) 0 else sec
         val h = s / 3600
@@ -36,11 +63,9 @@ object Format {
                 now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
 
         return if (sameDay) {
-            val sdf = SimpleDateFormat("HH:mm", Locale.CHINA)
-            "今天 ${sdf.format(Date(whenMs))}"
+            "今天 ${sdfHm().format(Date(whenMs))}"
         } else {
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.CHINA)
-            sdf.format(Date(whenMs))
+            sdfYmd().format(Date(whenMs))
         }
     }
 
@@ -49,8 +74,7 @@ object Format {
         val whenMs = epochSec * 1000
         val diffMs = nowMs - whenMs
         if (diffMs < 0) {
-            val sdf = SimpleDateFormat("yyyy.M.d", Locale.CHINA)
-            return sdf.format(Date(whenMs))
+            return sdfYMd().format(Date(whenMs))
         }
 
         val minuteMs = 60_000L
@@ -75,8 +99,7 @@ object Format {
                 "${day}天前"
             }
             else -> {
-                val sdf = SimpleDateFormat("yyyy.M.d", Locale.CHINA)
-                sdf.format(Date(whenMs))
+                sdfYMd().format(Date(whenMs))
             }
         }
     }

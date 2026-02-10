@@ -1830,6 +1830,71 @@ object BiliApi {
         return BiliClient.getJson(url)
     }
 
+    suspend fun commentPage(
+        type: Int,
+        oid: Long,
+        sort: Int = 1,
+        pn: Int = 1,
+        ps: Int = 20,
+        noHot: Int = 1,
+    ): JSONObject {
+        val safeType = type.takeIf { it > 0 } ?: error("type required")
+        val safeOid = oid.takeIf { it > 0L } ?: error("oid required")
+        val safePn = pn.coerceAtLeast(1)
+        val safePs = ps.coerceIn(1, 20)
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/v2/reply",
+                mapOf(
+                    "type" to safeType.toString(),
+                    "oid" to safeOid.toString(),
+                    "sort" to sort.toString(),
+                    "pn" to safePn.toString(),
+                    "ps" to safePs.toString(),
+                    "nohot" to noHot.toString(),
+                ),
+            )
+        val json = BiliClient.getJson(url)
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        return json.optJSONObject("data") ?: JSONObject()
+    }
+
+    suspend fun commentRepliesPage(
+        type: Int,
+        oid: Long,
+        rootRpid: Long,
+        pn: Int = 1,
+        ps: Int = 20,
+    ): JSONObject {
+        val safeType = type.takeIf { it > 0 } ?: error("type required")
+        val safeOid = oid.takeIf { it > 0L } ?: error("oid required")
+        val safeRoot = rootRpid.takeIf { it > 0L } ?: error("root required")
+        val safePn = pn.coerceAtLeast(1)
+        val safePs = ps.coerceIn(1, 49)
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/x/v2/reply/reply",
+                mapOf(
+                    "type" to safeType.toString(),
+                    "oid" to safeOid.toString(),
+                    "root" to safeRoot.toString(),
+                    "pn" to safePn.toString(),
+                    "ps" to safePs.toString(),
+                ),
+            )
+        val json = BiliClient.getJson(url)
+        val code = json.optInt("code", 0)
+        if (code != 0) {
+            val msg = json.optString("message", json.optString("msg", ""))
+            throw BiliApiException(apiCode = code, apiMessage = msg)
+        }
+        return json.optJSONObject("data") ?: JSONObject()
+    }
+
     suspend fun archiveRelated(bvid: String, aid: Long? = null): List<VideoCard> {
         val safeBvid = bvid.trim()
         val safeAid = aid?.takeIf { it > 0 }

@@ -42,12 +42,13 @@ internal fun PlayerActivity.toggleControls() {
     val willShow = osdMode == PlayerActivity.OsdMode.Hidden
     if (!willShow) {
         binding.settingsPanel.visibility = View.GONE
+        binding.commentsPanel.visibility = View.GONE
     }
     setControlsVisible(willShow)
 }
 
 internal fun PlayerActivity.setControlsVisible(visible: Boolean) {
-    val show = visible || binding.settingsPanel.visibility == View.VISIBLE
+    val show = visible || isSidePanelVisible()
     seekOsdHideJob?.cancel()
     seekOsdHideJob = null
     seekOsdToken = 0L
@@ -64,7 +65,7 @@ internal fun PlayerActivity.setControlsVisible(visible: Boolean) {
 }
 
 internal fun PlayerActivity.showSeekOsd() {
-    if (binding.settingsPanel.visibility == View.VISIBLE) return
+    if (isSidePanelVisible()) return
     if (osdMode == PlayerActivity.OsdMode.Full) {
         // Full OSD already has the progress bar; keep it alive.
         noteUserInteraction()
@@ -89,7 +90,7 @@ internal fun PlayerActivity.showSeekOsd() {
 }
 
 internal fun PlayerActivity.showSeekOsd(posMs: Long, durationMs: Long, bufferedPosMs: Long) {
-    if (binding.settingsPanel.visibility == View.VISIBLE) return
+    if (isSidePanelVisible()) return
     val duration = durationMs.coerceAtLeast(0L)
     val pos = posMs.coerceAtLeast(0L)
     val bufPos = bufferedPosMs.coerceAtLeast(0L)
@@ -186,7 +187,7 @@ internal fun PlayerActivity.scheduleHideSeekOsd() {
 
 internal fun PlayerActivity.updatePersistentBottomProgressBarVisibility() {
     val enabled = BiliClient.prefs.playerPersistentBottomProgressEnabled
-    val showControls = osdMode != PlayerActivity.OsdMode.Hidden || binding.settingsPanel.visibility == View.VISIBLE
+    val showControls = osdMode != PlayerActivity.OsdMode.Hidden || isSidePanelVisible()
     val persistentV = if (enabled && !showControls && !transientSeekOsdVisible) View.VISIBLE else View.GONE
     if (binding.progressPersistentBottom.visibility != persistentV) binding.progressPersistentBottom.visibility = persistentV
 
@@ -198,7 +199,7 @@ internal fun PlayerActivity.restartAutoHideTimer() {
     autoHideJob?.cancel()
     val exo = player ?: return
     if (osdMode != PlayerActivity.OsdMode.Full) return
-    if (binding.settingsPanel.visibility == View.VISIBLE) return
+    if (isSidePanelVisible()) return
     if (scrubbing) return
     if (!exo.isPlaying) return
     val token = lastInteractionAtMs
@@ -225,7 +226,7 @@ internal fun PlayerActivity.scheduleKeyScrubEnd() {
 }
 
 internal fun PlayerActivity.hasControlsFocus(): Boolean =
-    binding.topBar.hasFocus() || binding.bottomBar.hasFocus() || binding.settingsPanel.hasFocus()
+    binding.topBar.hasFocus() || binding.bottomBar.hasFocus() || binding.settingsPanel.hasFocus() || binding.commentsPanel.hasFocus()
 
 internal fun PlayerActivity.focusFirstControl() {
     binding.btnPlayPause.post { binding.btnPlayPause.requestFocus() }
@@ -351,7 +352,7 @@ internal fun PlayerActivity.smartSeek(direction: Int, showControls: Boolean, hin
     smartSeekLastAtMs = now
 
     if (showControls) {
-        if (osdMode != PlayerActivity.OsdMode.Full && binding.settingsPanel.visibility != View.VISIBLE) setControlsVisible(true) else noteUserInteraction()
+        if (osdMode != PlayerActivity.OsdMode.Full && !isSidePanelVisible()) setControlsVisible(true) else noteUserInteraction()
     } else {
         noteUserInteraction()
     }
@@ -382,7 +383,7 @@ internal fun PlayerActivity.startHoldSeek(direction: Int, showControls: Boolean)
     val exo = player ?: return
 
     if (showControls) {
-        if (osdMode != PlayerActivity.OsdMode.Full && binding.settingsPanel.visibility != View.VISIBLE) setControlsVisible(true) else noteUserInteraction()
+        if (osdMode != PlayerActivity.OsdMode.Full && !isSidePanelVisible()) setControlsVisible(true) else noteUserInteraction()
     } else {
         noteUserInteraction()
     }
@@ -407,7 +408,7 @@ internal fun PlayerActivity.startHoldScrub(direction: Int, showControls: Boolean
     val exo = player ?: return
 
     if (showControls) {
-        if (osdMode != PlayerActivity.OsdMode.Full && binding.settingsPanel.visibility != View.VISIBLE) setControlsVisible(true) else noteUserInteraction()
+        if (osdMode != PlayerActivity.OsdMode.Full && !isSidePanelVisible()) setControlsVisible(true) else noteUserInteraction()
     } else {
         noteUserInteraction()
     }

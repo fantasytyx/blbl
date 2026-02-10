@@ -77,4 +77,18 @@
     <string name="player_btn_subtitle">字幕</string>
     <string name="player_btn_playlist">播放列表</string>
     <string name="player_btn_recommend">推荐视频</string>
+    <string name="player_btn_comments">评论</string>
+    <string name="player_btn_back">返回</string>
+    <string name="player_panel_settings">设置</string>
+    <string name="player_panel_comments">评论</string>
+    <string name="player_panel_comment_thread">评论详情</string>
+    <string name="player_comment_sort">排序</string>
+    <string name="player_comment_sort_hot">热门</string>
+    <string name="player_comment_sort_new">最新</string>
+    <string name="player_comment_loading">加载中…</string>
+    <string name="player_comment_empty">暂无评论</string>
+    <string name="player_comment_thread_empty">暂无更多回复</string>
+    <string name="player_comment_load_failed">加载失败</string>
+    <string name="player_comment_no_aid">未获取到 aid，暂不支持评论</string>
+    <string name="player_comment_thread_root">原评论</string>
 </resources>

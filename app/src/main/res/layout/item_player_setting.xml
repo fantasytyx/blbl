@@ -6,7 +6,7 @@
     android:layout_marginBottom="14dp"
     android:clickable="true"
     android:focusable="true"
-    android:nextFocusLeft="@id/btn_advanced"
+    android:nextFocusLeft="@id/btn_settings_panel_back"
     android:stateListAnimator="@animator/blbl_focus_scale"
     app:cardBackgroundColor="@color/blbl_surface"
     app:cardCornerRadius="14dp"

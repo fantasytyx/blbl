@@ -112,6 +112,22 @@ class PlayerActivity : BaseActivity() {
     internal var favDialogJob: kotlinx.coroutines.Job? = null
     internal var favApplyJob: kotlinx.coroutines.Job? = null
 
+    internal var commentSort: Int = COMMENT_SORT_HOT
+    internal var commentsFetchJob: kotlinx.coroutines.Job? = null
+    internal var commentsFetchToken: Int = 0
+    internal var commentsPage: Int = 1
+    internal var commentsTotalCount: Int = -1
+    internal var commentsEndReached: Boolean = false
+    internal val commentsItems: ArrayList<PlayerCommentsAdapter.Item> = ArrayList()
+
+    internal var commentThreadRootRpid: Long = 0L
+    internal var commentThreadFetchJob: kotlinx.coroutines.Job? = null
+    internal var commentThreadFetchToken: Int = 0
+    internal var commentThreadPage: Int = 1
+    internal var commentThreadTotalCount: Int = -1
+    internal var commentThreadEndReached: Boolean = false
+    internal val commentThreadItems: ArrayList<PlayerCommentsAdapter.Item> = ArrayList()
+
     private val doubleBackToExit by lazy {
         DoubleBackToExitHandler(context = this, windowMs = BACK_DOUBLE_PRESS_WINDOW_MS) {
             if (osdMode != OsdMode.Hidden) setControlsVisible(false)
@@ -571,6 +587,7 @@ class PlayerActivity : BaseActivity() {
         )
         refreshSettings(settingsAdapter)
         updateDebugOverlay()
+        initSidePanels()
 
         initControls(exo)
         applyActionButtonsVisibility()
@@ -874,14 +891,17 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_INFO,
             KeyEvent.KEYCODE_GUIDE,
             -> {
-                if (binding.settingsPanel.visibility == View.VISIBLE) return true
+                if (isSidePanelVisible()) {
+                    if (!isSettingsPanelVisible() && (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS)) {
+                        showSettingsPanel()
+                    }
+                    return true
+                }
                 if (
                     osdMode == OsdMode.Hidden &&
                     (keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_SETTINGS)
                 ) {
-                    binding.settingsPanel.visibility = View.VISIBLE
-                    setControlsVisible(true)
-                    focusSettingsPanel()
+                    showSettingsPanel()
                     return true
                 }
                 setControlsVisible(true)
@@ -899,12 +919,7 @@ class PlayerActivity : BaseActivity() {
                     return true
                 }
                 finishOnBackKeyUp = false
-                if (binding.settingsPanel.visibility == View.VISIBLE) {
-                    binding.settingsPanel.visibility = View.GONE
-                    setControlsVisible(true)
-                    focusAdvancedControl()
-                    return true
-                }
+                if (isSidePanelVisible()) return onSidePanelBackPressed()
                 if (osdMode != OsdMode.Hidden) {
                     setControlsVisible(false)
                     return true
@@ -914,7 +929,7 @@ class PlayerActivity : BaseActivity() {
             }
 
             KeyEvent.KEYCODE_DPAD_UP -> {
-                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (isSidePanelVisible()) return super.dispatchKeyEvent(event)
                 // TV-style shortcut: when OSD is hidden, UP directly opens the playlist (video list)
                 // instead of first bringing up the OSD.
                 if (osdMode == OsdMode.Hidden) {
@@ -932,7 +947,7 @@ class PlayerActivity : BaseActivity() {
             }
 
             KeyEvent.KEYCODE_DPAD_DOWN -> {
-                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (isSidePanelVisible()) return super.dispatchKeyEvent(event)
                 if (binding.seekProgress.isFocused) {
                     setControlsVisible(true)
                     focusFirstControl()
@@ -949,13 +964,13 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_ENTER,
             KeyEvent.KEYCODE_NUMPAD_ENTER,
             -> {
-                if (binding.settingsPanel.visibility != View.VISIBLE && !hasControlsFocus()) {
+                if (!isSidePanelVisible() && !hasControlsFocus()) {
                     if (osdMode == OsdMode.Hidden) player?.pause()
                     setControlsVisible(true)
                     focusFirstControl()
                     return true
                 }
-                if (osdMode == OsdMode.Hidden && binding.settingsPanel.visibility != View.VISIBLE) {
+                if (osdMode == OsdMode.Hidden && !isSidePanelVisible()) {
                     player?.pause()
                     setControlsVisible(true)
                     focusFirstControl()
@@ -984,7 +999,8 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_MEDIA_REWIND,
             -> {
-                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && isSidePanelVisible()) return onSidePanelBackPressed()
+                if (isSidePanelVisible()) return super.dispatchKeyEvent(event)
                 if (osdMode == OsdMode.Full && binding.seekProgress.isFocused) return super.dispatchKeyEvent(event)
                 if (osdMode == OsdMode.Full && (binding.topBar.hasFocus() || binding.bottomBar.hasFocus())) return super.dispatchKeyEvent(event)
 
@@ -1004,7 +1020,7 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_DPAD_RIGHT,
             KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
             -> {
-                if (binding.settingsPanel.visibility == View.VISIBLE) return super.dispatchKeyEvent(event)
+                if (isSidePanelVisible()) return super.dispatchKeyEvent(event)
                 if (osdMode == OsdMode.Full && binding.seekProgress.isFocused) return super.dispatchKeyEvent(event)
                 if (osdMode == OsdMode.Full && (binding.topBar.hasFocus() || binding.bottomBar.hasFocus())) return super.dispatchKeyEvent(event)
 
@@ -1083,6 +1099,8 @@ class PlayerActivity : BaseActivity() {
         seekHintJob?.cancel()
         keyScrubEndJob?.cancel()
         relatedVideosFetchJob?.cancel()
+        commentsFetchJob?.cancel()
+        commentThreadFetchJob?.cancel()
         loadJob?.cancel()
         cancelDanmakuLoading(reason = "destroy")
         loadJob = null
@@ -1108,7 +1126,7 @@ class PlayerActivity : BaseActivity() {
                     override fun onDown(e: MotionEvent): Boolean = true
 
                     override fun onDoubleTap(e: MotionEvent): Boolean {
-                        if (binding.settingsPanel.visibility == View.VISIBLE) return true
+                        if (isSidePanelVisible()) return true
                         val w = binding.playerView.width.toFloat()
                         if (w <= 0f) return true
                         val dir = edgeDirection(e.x, w)
@@ -1129,12 +1147,7 @@ class PlayerActivity : BaseActivity() {
                     }
 
                     override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                        if (binding.settingsPanel.visibility == View.VISIBLE) {
-                            binding.settingsPanel.visibility = View.GONE
-                            setControlsVisible(true)
-                            focusFirstControl()
-                            return true
-                        }
+                        if (isSidePanelVisible()) return onSidePanelBackPressed()
                         if (osdMode != OsdMode.Hidden) {
                             setControlsVisible(false)
                             return true
@@ -1164,14 +1177,7 @@ class PlayerActivity : BaseActivity() {
         }
 
         binding.btnAdvanced.setOnClickListener {
-            val willShow = binding.settingsPanel.visibility != View.VISIBLE
-            binding.settingsPanel.visibility = if (willShow) View.VISIBLE else View.GONE
-            setControlsVisible(true)
-            if (willShow) {
-                focusSettingsPanel()
-            } else {
-                focusAdvancedControl()
-            }
+            toggleSettingsPanel()
         }
 
         binding.btnLike.setOnClickListener { onLikeButtonClicked() }
@@ -1206,6 +1212,10 @@ class PlayerActivity : BaseActivity() {
             binding.danmakuView.invalidate()
             updateDanmakuButton()
             setControlsVisible(true)
+        }
+
+        binding.btnComments.setOnClickListener {
+            toggleCommentsPanel()
         }
 
         binding.btnSubtitle.setOnClickListener {
