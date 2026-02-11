@@ -244,12 +244,34 @@ internal class DpadGridController(
     private fun handleDpadDown(itemView: View, position: Int): Boolean {
         val rootItem = recyclerView.findContainingItemView(itemView) ?: itemView
         val next = FocusFinder.getInstance().findNextFocus(recyclerView, rootItem, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, recyclerView)) return false
+        if (next != null && isDescendantOf(next, recyclerView)) {
+            // Consume even when an in-grid next focus exists. Letting the system handle the event
+            // can occasionally pick a "better" candidate outside the RecyclerView (e.g. sidebar),
+            // especially during layout/adapter updates while the user is holding DPAD_DOWN.
+            next.requestFocus()
+            return true
+        }
 
         if (recyclerView.canScrollVertically(1)) {
             val dy = (rootItem.height * config.scrollOnDownEdgeFactor).toInt().coerceAtLeast(1)
             recyclerView.scrollBy(0, dy)
-            recyclerView.post { tryFocusNextDownFromCurrent() }
+            val adapter = recyclerView.adapter
+            val itemCount = adapter?.itemCount ?: 0
+            val spanCount = spanCountForLayoutManager()
+            val candidatePos =
+                if (itemCount <= 0 || spanCount == null) {
+                    null
+                } else {
+                    when {
+                        position + spanCount in 0 until itemCount -> position + spanCount
+                        position + 1 in 0 until itemCount -> position + 1
+                        else -> null
+                    }
+                }
+            recyclerView.post {
+                if (tryFocusNextDownFromCurrent()) return@post
+                if (candidatePos != null) focusAdapterPosition(candidatePos)
+            }
             return true
         }
 
@@ -261,15 +283,30 @@ internal class DpadGridController(
         return true
     }
 
-    private fun tryFocusNextDownFromCurrent() {
-        if (!config.isEnabled()) return
-        val focused = recyclerView.findFocus() ?: return
-        if (!isDescendantOf(focused, recyclerView)) return
-        val itemView = recyclerView.findContainingItemView(focused) ?: return
+    private fun tryFocusNextDownFromCurrent(): Boolean {
+        if (!config.isEnabled()) return false
+        val focused = recyclerView.findFocus() ?: return false
+        if (!isDescendantOf(focused, recyclerView)) return false
+        val itemView = recyclerView.findContainingItemView(focused) ?: return false
         val next = FocusFinder.getInstance().findNextFocus(recyclerView, itemView, View.FOCUS_DOWN)
         if (next != null && isDescendantOf(next, recyclerView)) {
             next.requestFocus()
+            return true
         }
+        return false
+    }
+
+    private fun focusAdapterPosition(position: Int): Boolean {
+        val adapter = recyclerView.adapter ?: return false
+        val itemCount = adapter.itemCount
+        if (position !in 0 until itemCount) return false
+
+        recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
+            ?: run {
+                recyclerView.scrollToPosition(position)
+                recyclerView.post { recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus() }
+            }
+        return true
     }
 
     private fun isDescendantOf(view: View, ancestor: View): Boolean {

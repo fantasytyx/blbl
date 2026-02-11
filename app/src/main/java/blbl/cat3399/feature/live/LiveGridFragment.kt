@@ -13,6 +13,9 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.model.LiveRoomCard
+import blbl.cat3399.core.paging.PagedGridStateMachine
+import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentLiveGridBinding
@@ -34,11 +37,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
     private val enableTabFocus: Boolean by lazy { requireArguments().getBoolean(ARG_ENABLE_TAB_FOCUS, true) }
 
     private val loadedRoomIds = HashSet<Long>()
-    private var isLoadingMore: Boolean = false
-    private var endReached: Boolean = false
-
-    private var page: Int = 1
-    private var requestToken: Int = 0
+    private val paging = PagedGridStateMachine(initialKey = 1)
 
     private var pendingFocusFirstCardFromTab: Boolean = false
     private var pendingFocusFirstCardFromContentSwitch: Boolean = false
@@ -82,7 +81,8 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (dy <= 0) return
-                    if (isLoadingMore || endReached) return
+                    val s = paging.snapshot()
+                    if (s.isLoading || s.endReached) return
                     val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
                     val lastVisible = lm.findLastVisibleItemPosition()
                     val total = adapter.itemCount
@@ -122,7 +122,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
                             if (enableTabFocus) switchToNextTabFromContentEdge()
                         }
 
-                        override fun canLoadMore(): Boolean = !endReached
+                        override fun canLoadMore(): Boolean = !paging.snapshot().endReached
 
                         override fun loadMore() {
                             loadNextPage()
@@ -175,61 +175,76 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
     }
 
     private fun resetAndLoad() {
+        paging.reset()
         loadedRoomIds.clear()
-        endReached = false
-        isLoadingMore = false
-        page = 1
-        requestToken++
         loadNextPage(isRefresh = true)
     }
 
+    private data class FetchedPage(
+        val items: List<LiveRoomCard>,
+        val hasMore: Boolean?,
+    )
+
     private fun loadNextPage(isRefresh: Boolean = false) {
-        if (isLoadingMore || endReached) return
-        val token = requestToken
-        isLoadingMore = true
+        val startSnap = paging.snapshot()
+        if (startSnap.isLoading || startSnap.endReached) return
+        val startGen = startSnap.generation
+        val startPage = startSnap.nextKey
         val startAt = SystemClock.uptimeMillis()
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val fetched =
-                    when (source) {
-                        SRC_FOLLOWING -> {
-                            val res = BiliApi.liveFollowing(page = page, pageSize = 10)
-                            if (!res.hasMore) endReached = true
-                            res.items
-                        }
-                        else -> BiliApi.liveRecommend(page = page)
-                    }
+                val result =
+                    paging.loadNextPage(
+                        isRefresh = isRefresh,
+                        fetch = { page ->
+                            when (source) {
+                                SRC_FOLLOWING -> {
+                                    val res = BiliApi.liveFollowing(page = page, pageSize = 10)
+                                    FetchedPage(items = res.items, hasMore = res.hasMore)
+                                }
+                                else -> FetchedPage(items = BiliApi.liveRecommend(page = page), hasMore = null)
+                            }
+                        },
+                        reduce = { page, fetched ->
+                            val seen = HashSet<Long>(fetched.items.size)
+                            val filtered =
+                                fetched.items.filter {
+                                    if (loadedRoomIds.contains(it.roomId)) return@filter false
+                                    seen.add(it.roomId)
+                                }
+                            val endReached =
+                                when (source) {
+                                    SRC_FOLLOWING -> fetched.hasMore == false
+                                    else -> fetched.items.isEmpty() || (filtered.isEmpty() && page >= 8)
+                                }
+                            PagedGridStateMachine.Update(
+                                items = filtered,
+                                nextKey = page + 1,
+                                endReached = endReached,
+                            )
+                        },
+                    )
 
-                if (token != requestToken) return@launch
-
-                val filtered = fetched.filter { loadedRoomIds.add(it.roomId) }
-
-                if (filtered.isNotEmpty()) {
-                    if (page == 1) adapter.submit(filtered) else adapter.append(filtered)
+                val applied = result.appliedOrNull() ?: return@launch
+                applied.items.forEach { loadedRoomIds.add(it.roomId) }
+                if (applied.items.isNotEmpty()) {
+                    if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
                 }
                 _binding?.recycler?.post {
                     restoreFocusIfNeeded()
                     maybeConsumePendingFocusFirstCard()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
                 }
-
-                if (source == SRC_RECOMMEND) {
-                    // Conservative end guard.
-                    if (fetched.isEmpty() || (filtered.isEmpty() && page >= 8)) {
-                        // Conservative end guard.
-                        endReached = true
-                    }
-                }
-
-                page++
-                AppLog.i("LiveGrid", "load ok src=$source page=${page - 1} add=${filtered.size} total=${adapter.itemCount} cost=${SystemClock.uptimeMillis() - startAt}ms")
+                AppLog.i(
+                    "LiveGrid",
+                    "load ok src=$source page=$startPage add=${applied.items.size} total=${adapter.itemCount} cost=${SystemClock.uptimeMillis() - startAt}ms",
+                )
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                AppLog.e("LiveGrid", "load failed src=$source page=$page", t)
+                AppLog.e("LiveGrid", "load failed src=$source page=$startPage", t)
                 context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
             } finally {
-                if (isRefresh && token == requestToken) _binding?.swipeRefresh?.isRefreshing = false
-                isLoadingMore = false
+                if (isRefresh && paging.snapshot().generation == startGen) _binding?.swipeRefresh?.isRefreshing = false
             }
         }
     }

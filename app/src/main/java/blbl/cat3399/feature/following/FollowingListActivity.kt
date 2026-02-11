@@ -12,7 +12,10 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.model.Following
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.paging.PagedGridStateMachine
+import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
@@ -30,11 +33,9 @@ class FollowingListActivity : BaseActivity() {
 
     private var vmid: Long = 0L
     private var forceLoginUi: Boolean = false
-    private var page: Int = 1
-    private var isLoadingMore: Boolean = false
-    private var endReached: Boolean = false
     private var total: Int = 0
     private val loadedMids = HashSet<Long>()
+    private val paging = PagedGridStateMachine(initialKey = 1)
 
     private var dpadGridController: DpadGridController? = null
 
@@ -69,7 +70,8 @@ class FollowingListActivity : BaseActivity() {
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (dy <= 0) return
-                    if (isLoadingMore || endReached) return
+                    val s = paging.snapshot()
+                    if (s.isLoading || s.endReached) return
                     val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
                     val lastVisible = lm.findLastVisibleItemPosition()
                     val totalCount = adapter.itemCount
@@ -96,7 +98,7 @@ class FollowingListActivity : BaseActivity() {
 
                         override fun onRightEdge() = Unit
 
-                        override fun canLoadMore(): Boolean = !endReached
+                        override fun canLoadMore(): Boolean = !paging.snapshot().endReached
 
                         override fun loadMore() {
                             loadNextPage()
@@ -220,42 +222,79 @@ class FollowingListActivity : BaseActivity() {
     }
 
     private fun resetAndLoad() {
+        paging.reset()
         loadedMids.clear()
-        page = 1
         total = 0
-        endReached = false
-        isLoadingMore = false
         dpadGridController?.clearPendingFocusAfterLoadMore()
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
     }
 
+    private data class FetchedPage(
+        val items: List<Following>,
+        val total: Int,
+        val hasMore: Boolean,
+    )
+
     private fun loadNextPage(isRefresh: Boolean = false) {
-        if (isLoadingMore || endReached) return
-        val currentPage = page
-        isLoadingMore = true
+        val startSnap = paging.snapshot()
+        if (startSnap.isLoading || startSnap.endReached) return
+        val startGen = startSnap.generation
+        val startPage = startSnap.nextKey
         lifecycleScope.launch {
             try {
-                val mid = ensureUserMid() ?: return@launch
-                val res = BiliApi.followingsPage(vmid = mid, pn = currentPage, ps = 50)
-                total = res.total
-                if (res.items.isEmpty()) {
-                    endReached = true
-                    if (isRefresh) Toast.makeText(this@FollowingListActivity, "暂无关注", Toast.LENGTH_SHORT).show()
+                var latestFetched: FetchedPage? = null
+                val result =
+                    paging.loadNextPage(
+                        isRefresh = isRefresh,
+                        fetch = { page ->
+                            val mid = ensureUserMid()
+                            if (mid == null) {
+                                null
+                            } else {
+                                val res = BiliApi.followingsPage(vmid = mid, pn = page, ps = 50)
+                                FetchedPage(items = res.items, total = res.total, hasMore = res.hasMore).also { latestFetched = it }
+                            }
+                        },
+                        reduce = { page, fetched ->
+                            if (fetched.items.isEmpty()) {
+                                PagedGridStateMachine.Update(
+                                    items = emptyList<Following>(),
+                                    nextKey = page,
+                                    endReached = true,
+                                )
+                            } else {
+                                val seen = HashSet<Long>(fetched.items.size)
+                                val filtered =
+                                    fetched.items.filter {
+                                        if (loadedMids.contains(it.mid)) return@filter false
+                                        seen.add(it.mid)
+                                    }
+                                PagedGridStateMachine.Update(
+                                    items = filtered,
+                                    nextKey = page + 1,
+                                    endReached = !fetched.hasMore,
+                                )
+                            }
+                        },
+                    )
+
+                val applied = result.appliedOrNull() ?: return@launch
+                val fetched = latestFetched ?: return@launch
+                total = fetched.total
+                if (fetched.items.isEmpty()) {
+                    if (applied.isRefresh) Toast.makeText(this@FollowingListActivity, "暂无关注", Toast.LENGTH_SHORT).show()
                     return@launch
                 }
-                val filtered = res.items.filter { loadedMids.add(it.mid) }
-                if (currentPage == 1) adapter.submit(filtered) else adapter.append(filtered)
-                page = currentPage + 1
-                endReached = !res.hasMore
+                applied.items.forEach { loadedMids.add(it.mid) }
+                if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
                 binding.recycler.post { dpadGridController?.consumePendingFocusAfterLoadMore() }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                AppLog.e("FollowingList", "load failed page=$currentPage", t)
+                AppLog.e("FollowingList", "load failed page=$startPage", t)
                 Toast.makeText(this@FollowingListActivity, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show()
             } finally {
-                binding.swipeRefresh.isRefreshing = false
-                isLoadingMore = false
+                if (paging.snapshot().generation == startGen) binding.swipeRefresh.isRefreshing = false
             }
         }
     }

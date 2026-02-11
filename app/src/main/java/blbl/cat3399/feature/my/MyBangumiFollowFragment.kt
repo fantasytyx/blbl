@@ -13,6 +13,8 @@ import androidx.recyclerview.widget.SimpleItemAnimator
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.paging.PagedGridStateMachine
+import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.databinding.FragmentVideoGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
@@ -26,10 +28,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
     private val type: Int by lazy { requireArguments().getInt(ARG_TYPE) }
     private lateinit var adapter: BangumiFollowAdapter
 
-    private var isLoadingMore: Boolean = false
-    private var endReached: Boolean = false
-    private var page: Int = 1
-    private var requestToken: Int = 0
+    private val paging = PagedGridStateMachine(initialKey = 1)
     private var initialLoadTriggered: Boolean = false
     private var pendingRestorePosition: Int? = null
     private var pendingFocusFirstItemFromTabSwitch: Boolean = false
@@ -77,7 +76,7 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
                             switchToNextMyTabFromContentEdge()
                         }
 
-                        override fun canLoadMore(): Boolean = !endReached
+                        override fun canLoadMore(): Boolean = !paging.snapshot().endReached
 
                         override fun loadMore() {
                             loadNextPage()
@@ -92,7 +91,8 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (dy <= 0) return
-                    if (isLoadingMore || endReached) return
+                    val s = paging.snapshot()
+                    if (s.isLoading || s.endReached) return
                     val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
                     val last = lm.findLastVisibleItemPosition()
                     val total = adapter.itemCount
@@ -183,47 +183,67 @@ class MyBangumiFollowFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHa
     }
 
     private fun resetAndLoad() {
-        isLoadingMore = false
-        endReached = false
-        page = 1
-        requestToken++
+        paging.reset()
         dpadGridController?.clearPendingFocusAfterLoadMore()
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
     }
 
+    private data class FetchedPage(
+        val items: List<blbl.cat3399.core.model.BangumiSeason>,
+        val pages: Int,
+    )
+
     private fun loadNextPage(isRefresh: Boolean = false) {
-        if (isLoadingMore || endReached) return
-        val token = requestToken
-        isLoadingMore = true
+        val startSnap = paging.snapshot()
+        if (startSnap.isLoading || startSnap.endReached) return
+        val startGen = startSnap.generation
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val nav = BiliApi.nav()
-                val mid = nav.optJSONObject("data")?.optLong("mid") ?: 0L
-                if (mid <= 0) error("invalid mid")
+                val result =
+                    paging.loadNextPage(
+                        isRefresh = isRefresh,
+                        fetch = { page ->
+                            val nav = BiliApi.nav()
+                            val mid = nav.optJSONObject("data")?.optLong("mid") ?: 0L
+                            if (mid <= 0) error("invalid mid")
 
-                val res = BiliApi.bangumiFollowList(vmid = mid, type = type, pn = page, ps = 15)
-                if (token != requestToken) return@launch
+                            val res = BiliApi.bangumiFollowList(vmid = mid, type = type, pn = page, ps = 15)
+                            FetchedPage(items = res.items, pages = res.pages)
+                        },
+                        reduce = { page, fetched ->
+                            if (fetched.items.isEmpty()) {
+                                PagedGridStateMachine.Update(
+                                    items = emptyList<blbl.cat3399.core.model.BangumiSeason>(),
+                                    nextKey = page,
+                                    endReached = true,
+                                )
+                            } else {
+                                val nextPage = page + 1
+                                val endReached = fetched.pages > 0 && nextPage > fetched.pages
+                                PagedGridStateMachine.Update(
+                                    items = fetched.items,
+                                    nextKey = nextPage,
+                                    endReached = endReached,
+                                )
+                            }
+                        },
+                    )
 
-                if (res.items.isEmpty()) {
-                    endReached = true
-                    return@launch
-                }
-                if (isRefresh) adapter.submit(res.items) else adapter.append(res.items)
+                val applied = result.appliedOrNull() ?: return@launch
+                if (applied.items.isEmpty()) return@launch
+                if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
                 _binding?.recycler?.post {
                     maybeConsumePendingFocusFirstItemFromTabSwitch()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
                 }
                 restoreFocusIfNeeded()
-                page++
-                if (res.pages > 0 && page > res.pages) endReached = true
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("MyBangumi", "load failed type=$type", t)
                 context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
             } finally {
-                if (token == requestToken) _binding?.swipeRefresh?.isRefreshing = false
-                isLoadingMore = false
+                if (paging.snapshot().generation == startGen) _binding?.swipeRefresh?.isRefreshing = false
             }
         }
     }

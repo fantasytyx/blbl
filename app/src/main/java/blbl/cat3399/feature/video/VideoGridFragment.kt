@@ -15,6 +15,8 @@ import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.paging.PagedGridStateMachine
+import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.UiScale
@@ -28,6 +30,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
+    private data class PagingKey(
+        val page: Int,
+        val recommendFetchRow: Int,
+    )
+
     private var _binding: FragmentVideoGridBinding? = null
     private val binding get() = _binding!!
 
@@ -41,13 +48,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     private val rid: Int by lazy { requireArguments().getInt(ARG_RID, 0) }
 
     private val loadedBvids = HashSet<String>()
-    private var isLoadingMore: Boolean = false
-    private var endReached: Boolean = false
-
-    private var page: Int = 1
-    private var recommendFetchRow: Int = 1
-
-    private var requestToken: Int = 0
+    private val paging = PagedGridStateMachine(initialKey = PagingKey(page = 1, recommendFetchRow = 1))
 
     private var pendingFocusFirstCardFromTab: Boolean = false
     private var pendingFocusFirstCardFromContentSwitch: Boolean = false
@@ -116,7 +117,8 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (dy <= 0) return
-                    if (isLoadingMore || endReached) return
+                    val s = paging.snapshot()
+                    if (s.isLoading || s.endReached) return
 
                     val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
                     val lastVisible = lm.findLastVisibleItemPosition()
@@ -149,7 +151,7 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
                             switchToNextTabFromContentEdge()
                         }
 
-                        override fun canLoadMore(): Boolean = !endReached
+                        override fun canLoadMore(): Boolean = !paging.snapshot().endReached
 
                         override fun loadMore() {
                             loadNextPage()
@@ -219,74 +221,90 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
 
     private fun resetAndLoad() {
         AppLog.d("VideoGrid", "resetAndLoad source=$source rid=$rid t=${SystemClock.uptimeMillis()}")
+        paging.reset()
         loadedBvids.clear()
-        endReached = false
-        isLoadingMore = false
-        page = 1
-        recommendFetchRow = 1
-        requestToken++
         loadNextPage(isRefresh = true)
     }
 
     private fun loadNextPage(isRefresh: Boolean = false) {
-        if (isLoadingMore || endReached) return
-        val token = requestToken
-        isLoadingMore = true
+        val startSnap = paging.snapshot()
+        if (startSnap.isLoading || startSnap.endReached) return
+        val startGen = startSnap.generation
+        val startKey = startSnap.nextKey
         val startAt = SystemClock.uptimeMillis()
         AppLog.d(
             "VideoGrid",
-            "loadNextPage start source=$source rid=$rid page=$page refresh=$isRefresh t=$startAt",
+            "loadNextPage start source=$source rid=$rid page=${startKey.page} refresh=$isRefresh t=$startAt",
         )
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val ps = 24
-                val cards = when (source) {
-                    SRC_RECOMMEND -> BiliApi.recommend(freshIdx = page, ps = ps, fetchRow = recommendFetchRow)
-                    SRC_REGION -> BiliApi.regionLatest(rid = rid, pn = page, ps = ps)
-                    else -> BiliApi.popular(pn = page, ps = ps)
-                }
+                val result =
+                    paging.loadNextPage(
+                        isRefresh = isRefresh,
+                        fetch = { key ->
+                            val ps = 24
+                            when (source) {
+                                SRC_RECOMMEND -> BiliApi.recommend(freshIdx = key.page, ps = ps, fetchRow = key.recommendFetchRow)
+                                SRC_REGION -> BiliApi.regionLatest(rid = rid, pn = key.page, ps = ps)
+                                else -> BiliApi.popular(pn = key.page, ps = ps)
+                            }
+                        },
+                        reduce = { key, cards ->
+                            if (cards.isEmpty()) {
+                                PagedGridStateMachine.Update(
+                                    items = emptyList(),
+                                    nextKey = key,
+                                    endReached = true,
+                                )
+                            } else {
+                                val seen = HashSet<String>(cards.size)
+                                val filtered =
+                                    cards.filter {
+                                        if (loadedBvids.contains(it.bvid)) return@filter false
+                                        seen.add(it.bvid)
+                                    }
+                                val nextKey =
+                                    if (source == SRC_RECOMMEND) {
+                                        key.copy(
+                                            page = key.page + 1,
+                                            recommendFetchRow = key.recommendFetchRow + cards.size,
+                                        )
+                                    } else {
+                                        key.copy(page = key.page + 1)
+                                    }
+                                PagedGridStateMachine.Update(
+                                    items = filtered,
+                                    nextKey = nextKey,
+                                    endReached = filtered.isEmpty(),
+                                )
+                            }
+                        },
+                    )
 
-                if (token != requestToken) return@launch
-
-                if (cards.isEmpty()) {
-                    endReached = true
-                    return@launch
-                }
-
-                val filtered = cards.filter { loadedBvids.add(it.bvid) }
-                if (page == 1) {
-                    adapter.submit(filtered)
-                } else {
-                    adapter.append(filtered)
-                }
-                _binding?.recycler?.post {
-                    maybeConsumePendingFocusFirstCard()
-                    dpadGridController?.consumePendingFocusAfterLoadMore()
-                }
-
-                if (source == SRC_RECOMMEND) {
-                    recommendFetchRow += cards.size
-                }
-                page++
-
-                if (filtered.isEmpty()) {
-                    endReached = true
-                }
-
-                AppLog.i(
-                    "VideoGrid",
-                    "load ok source=$source rid=$rid page=${page - 1} add=${filtered.size} total=${adapter.itemCount} cost=${SystemClock.uptimeMillis() - startAt}ms",
-                )
+                val applied = result.appliedOrNull() ?: return@launch
+                applied.items.forEach { loadedBvids.add(it.bvid) }
+                val endDueToEmptyFetch = applied.items.isEmpty() && paging.snapshot().nextKey == startKey
+                    if (endDueToEmptyFetch) return@launch
+                    if (applied.items.isNotEmpty()) {
+                        if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
+                    }
+                    _binding?.recycler?.post {
+                        maybeConsumePendingFocusFirstCard()
+                        dpadGridController?.consumePendingFocusAfterLoadMore()
+                    }
+                    AppLog.i(
+                        "VideoGrid",
+                        "load ok source=$source rid=$rid page=${startKey.page} add=${applied.items.size} total=${adapter.itemCount} cost=${SystemClock.uptimeMillis() - startAt}ms",
+                    )
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                AppLog.e("VideoGrid", "load failed source=$source rid=$rid page=$page", t)
+                AppLog.e("VideoGrid", "load failed source=$source rid=$rid page=${startKey.page}", t)
                 context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
             } finally {
-                if (isRefresh && token == requestToken) _binding?.swipeRefresh?.isRefreshing = false
-                isLoadingMore = false
+                if (isRefresh && paging.snapshot().generation == startGen) _binding?.swipeRefresh?.isRefreshing = false
                 AppLog.d(
                     "VideoGrid",
-                    "loadNextPage end source=$source rid=$rid page=$page refresh=$isRefresh t=${SystemClock.uptimeMillis()}",
+                    "loadNextPage end source=$source rid=$rid page=${paging.snapshot().nextKey.page} refresh=$isRefresh t=${SystemClock.uptimeMillis()}",
                 )
             }
         }

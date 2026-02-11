@@ -16,6 +16,8 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.paging.PagedGridStateMachine
+import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentVideoGridBinding
@@ -37,12 +39,9 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
     private var lastUiScaleFactor: Float? = null
 
     private val loadedKeys = HashSet<String>()
-    private var isLoadingMore: Boolean = false
-    private var endReached: Boolean = false
-    private var requestToken: Int = 0
+    private val paging = PagedGridStateMachine<BiliApi.HistoryCursor?>(initialKey = null)
     private var initialLoadTriggered: Boolean = false
 
-    private var cursor: BiliApi.HistoryCursor? = null
     private var pendingFocusFirstItemFromTabSwitch: Boolean = false
     private var dpadGridController: DpadGridController? = null
 
@@ -115,7 +114,8 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
             object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     if (dy <= 0) return
-                    if (isLoadingMore || endReached) return
+                    val s = paging.snapshot()
+                    if (s.isLoading || s.endReached) return
                     val lm = recyclerView.layoutManager as? GridLayoutManager ?: return
                     val lastVisible = lm.findLastVisibleItemPosition()
                     val total = adapter.itemCount
@@ -143,7 +143,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                             switchToNextMyTabFromContentEdge()
                         }
 
-                        override fun canLoadMore(): Boolean = !endReached
+                        override fun canLoadMore(): Boolean = !paging.snapshot().endReached
 
                         override fun loadMore() {
                             loadNextPage()
@@ -236,49 +236,69 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
     }
 
     private fun resetAndLoad() {
+        paging.reset()
         loadedKeys.clear()
-        isLoadingMore = false
-        endReached = false
-        cursor = null
-        requestToken++
         dpadGridController?.clearPendingFocusAfterLoadMore()
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
     }
 
+    private data class FetchedPage(
+        val items: List<VideoCard>,
+        val nextCursor: BiliApi.HistoryCursor?,
+    )
+
     private fun loadNextPage(isRefresh: Boolean = false) {
-        if (isLoadingMore || endReached) return
-        val token = requestToken
-        isLoadingMore = true
+        val startSnap = paging.snapshot()
+        if (startSnap.isLoading || startSnap.endReached) return
+        val startGen = startSnap.generation
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                var c = cursor
-                var filtered = emptyList<VideoCard>()
-                var attempts = 0
-                while (attempts < 5) {
-                    val page =
-                        BiliApi.historyCursor(
-                            max = c?.max ?: 0,
-                            business = c?.business,
-                            viewAt = c?.viewAt ?: 0,
-                            ps = 24,
-                        )
-                    if (token != requestToken) return@launch
+                val result =
+                    paging.loadNextPage(
+                        isRefresh = isRefresh,
+                        fetch = { cursor ->
+                            var c = cursor
+                            var filtered = emptyList<VideoCard>()
+                            var nextCursor: BiliApi.HistoryCursor? = cursor
+                            var attempts = 0
+                            while (attempts < 5) {
+                                val page =
+                                    BiliApi.historyCursor(
+                                        max = c?.max ?: 0,
+                                        business = c?.business,
+                                        viewAt = c?.viewAt ?: 0,
+                                        ps = 24,
+                                    )
 
-                    val nextCursor = page.cursor
-                    cursor = nextCursor
-                    filtered = page.items.filter { loadedKeys.add(it.stableKey()) }
-                    if (filtered.isNotEmpty() || nextCursor == null) break
-                    if (nextCursor == c) break
-                    c = nextCursor
-                    attempts++
-                }
-                if (filtered.isEmpty()) {
-                    endReached = true
-                    return@launch
-                }
+                                nextCursor = page.cursor
+                                val seen = HashSet<String>(page.items.size)
+                                filtered =
+                                    page.items.filter { card ->
+                                        val k = card.stableKey()
+                                        if (loadedKeys.contains(k)) return@filter false
+                                        seen.add(k)
+                                    }
+                                if (filtered.isNotEmpty() || nextCursor == null) break
+                                if (nextCursor == c) break
+                                c = nextCursor
+                                attempts++
+                            }
+                            FetchedPage(items = filtered, nextCursor = nextCursor)
+                        },
+                        reduce = { _, fetched ->
+                            PagedGridStateMachine.Update(
+                                items = fetched.items,
+                                nextKey = fetched.nextCursor,
+                                endReached = fetched.items.isEmpty(),
+                            )
+                        },
+                    )
 
-                if (isRefresh) adapter.submit(filtered) else adapter.append(filtered)
+                val applied = result.appliedOrNull() ?: return@launch
+                if (applied.items.isEmpty()) return@launch
+                applied.items.forEach { loadedKeys.add(it.stableKey()) }
+                if (applied.isRefresh) adapter.submit(applied.items) else adapter.append(applied.items)
                 _binding?.recycler?.post {
                     maybeConsumePendingFocusFirstItemFromTabSwitch()
                     dpadGridController?.consumePendingFocusAfterLoadMore()
@@ -289,8 +309,7 @@ class MyHistoryFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler 
                 AppLog.e("MyHistory", "load failed", t)
                 context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
             } finally {
-                if (token == requestToken) _binding?.swipeRefresh?.isRefreshing = false
-                isLoadingMore = false
+                if (paging.snapshot().generation == startGen) _binding?.swipeRefresh?.isRefreshing = false
             }
         }
     }

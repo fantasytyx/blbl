@@ -115,4 +115,7 @@ dependencies {
 
     implementation("com.google.protobuf:protobuf-javalite:3.25.3")
     implementation("com.google.zxing:core:3.5.3")
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
