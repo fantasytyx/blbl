@@ -18,8 +18,11 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.ActivityStackLimiter
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.ActivityUpDetailBinding
@@ -31,7 +34,6 @@ import blbl.cat3399.feature.video.VideoDetailActivity
 import blbl.cat3399.feature.video.VideoCardAdapter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class UpDetailActivity : BaseActivity() {
     private lateinit var binding: ActivityUpDetailBinding
@@ -184,26 +186,11 @@ class UpDetailActivity : BaseActivity() {
 
     private fun applyUiMode() {
         val sidebarScale = UiScale.factor(this, BiliClient.prefs.sidebarSize)
-        fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
-
-        val sizePx = scaledPx(R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
-        val padPx = scaledPx(R.dimen.sidebar_settings_padding_tv)
-
-        val lp = binding.btnBack.layoutParams
-        if (lp.width != sizePx || lp.height != sizePx) {
-            lp.width = sizePx
-            lp.height = sizePx
-            binding.btnBack.layoutParams = lp
-        }
-        if (
-            binding.btnBack.paddingLeft != padPx ||
-            binding.btnBack.paddingTop != padPx ||
-            binding.btnBack.paddingRight != padPx ||
-            binding.btnBack.paddingBottom != padPx
-        ) {
-            binding.btnBack.setPadding(padPx, padPx, padPx, padPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = binding.btnBack,
+            resources = resources,
+            sidebarScale = sidebarScale,
+        )
     }
 
     override fun onDestroy() {
@@ -412,7 +399,7 @@ class UpDetailActivity : BaseActivity() {
         if (!pendingFocusFirstItemAfterLoad) return
         if (!hasWindowFocus()) return
         val focused = currentFocus
-        if (focused != null && focused != binding.recycler && isDescendantOf(focused, binding.recycler)) {
+        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
             pendingFocusFirstItemAfterLoad = false
             return
         }
@@ -421,25 +408,13 @@ class UpDetailActivity : BaseActivity() {
         focusGridAt(0)
     }
 
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
-    }
-
     private fun spanCountForWidth(): Int {
-        val override = BiliClient.prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return when {
-            widthDp >= 1100 -> 4
-            widthDp >= 800 -> 3
-            else -> 2
-        }
+        return GridSpanPolicy.fixedSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = BiliClient.prefs.gridSpanCount,
+        )
     }
 
     private fun isNavKey(keyCode: Int): Boolean {

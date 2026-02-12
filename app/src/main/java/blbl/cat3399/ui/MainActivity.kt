@@ -26,7 +26,9 @@ import blbl.cat3399.core.log.CrashTracker
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.tv.RemoteKeys
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.ActivityMainBinding
@@ -596,13 +598,16 @@ class MainActivity : BaseActivity() {
         setTopMargin(binding.recyclerSidebar, scaledPx(R.dimen.sidebar_nav_margin_top_tv))
 
         val settingsSize = scaledPx(R.dimen.sidebar_settings_size_tv)
-        setSize(binding.btnSidebarSettings, settingsSize, settingsSize)
+        val settingsPadding = scaledPx(R.dimen.sidebar_settings_padding_tv)
+        BackButtonSizingHelper.applySizeAndPadding(
+            view = binding.btnSidebarSettings,
+            sizePx = settingsSize,
+            paddingPx = settingsPadding,
+        )
         setBottomMargin(
             binding.btnSidebarSettings,
             scaledPx(R.dimen.sidebar_settings_margin_bottom_tv),
         )
-        val settingsPadding = scaledPx(R.dimen.sidebar_settings_padding_tv)
-        binding.btnSidebarSettings.setPadding(settingsPadding, settingsPadding, settingsPadding, settingsPadding)
     }
 
     private fun setSize(view: View, widthPx: Int, heightPx: Int) {
@@ -666,7 +671,7 @@ class MainActivity : BaseActivity() {
     private fun forceInitialSidebarFocusIfNeeded() {
         if (!needForceInitialSidebarFocus) return
         val focused = currentFocus
-        if (focused == null || !isDescendantOf(focused, binding.recyclerSidebar)) {
+        if (focused == null || !FocusTreeUtils.isDescendantOf(focused, binding.recyclerSidebar)) {
             focusSidebarFirstNav()
         }
         needForceInitialSidebarFocus = false
@@ -692,7 +697,7 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun isInSidebar(view: View): Boolean = isDescendantOf(view, binding.sidebar)
+    private fun isInSidebar(view: View): Boolean = FocusTreeUtils.isDescendantOf(view, binding.sidebar)
 
     private fun sidebarWidthDimenFor(prefValue: String): Int {
         return when (prefValue) {
@@ -702,17 +707,7 @@ class MainActivity : BaseActivity() {
         }
     }
 
-    private fun isInMainContainer(view: View): Boolean = isDescendantOf(view, binding.mainContainer)
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            val parent = current.parent
-            current = parent as? View
-        }
-        return false
-    }
+    private fun isInMainContainer(view: View): Boolean = FocusTreeUtils.isDescendantOf(view, binding.mainContainer)
 
     private fun focusSidebarFirstNav(): Boolean = focusSidebarNavAt(0)
 
@@ -746,7 +741,7 @@ class MainActivity : BaseActivity() {
             if (lastMain != null &&
                 lastMain.isAttachedToWindow &&
                 lastMain.isShown &&
-                isDescendantOf(lastMain, recyclerFollowing)
+                FocusTreeUtils.isDescendantOf(lastMain, recyclerFollowing)
             ) {
                 lastMain.requestFocus()
                 return true
@@ -826,7 +821,7 @@ class MainActivity : BaseActivity() {
         val fragmentView = supportFragmentManager.findFragmentById(R.id.main_container)?.view ?: return false
         val recyclerFollowing = fragmentView.findViewById<RecyclerView?>(R.id.recycler_following) ?: return false
         val recyclerDynamic = fragmentView.findViewById<RecyclerView?>(R.id.recycler_dynamic) ?: return false
-        if (!isDescendantOf(focused, recyclerDynamic)) return false
+        if (!FocusTreeUtils.isDescendantOf(focused, recyclerDynamic)) return false
         if (!isStaggeredGridLeftEdge(focused, recyclerDynamic)) return false
 
         recyclerFollowing.post {
@@ -873,7 +868,7 @@ class MainActivity : BaseActivity() {
             return focusSidebarNavAt(navAdapter.itemCount - 1)
         }
 
-        val inNav = isDescendantOf(focused, binding.recyclerSidebar)
+        val inNav = FocusTreeUtils.isDescendantOf(focused, binding.recyclerSidebar)
         if (!inNav) {
             if (up) return true
             binding.btnSidebarSettings.requestFocus()

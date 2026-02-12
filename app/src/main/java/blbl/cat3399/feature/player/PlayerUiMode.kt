@@ -8,6 +8,7 @@ import androidx.core.content.ContextCompat
 import blbl.cat3399.R
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import kotlin.math.min
@@ -174,8 +175,11 @@ internal object PlayerUiMode {
         val topBtnPad = scaledPx(R.dimen.player_top_button_padding_tv)
         val backBtnSize = scaledSidebarPx(R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
         val backBtnPad = scaledSidebarPx(R.dimen.sidebar_settings_padding_tv)
-        setSize(binding.btnBack, backBtnSize, backBtnSize)
-        binding.btnBack.setPadding(backBtnPad, backBtnPad, backBtnPad, backBtnPad)
+        BackButtonSizingHelper.applySizeAndPadding(
+            view = binding.btnBack,
+            sizePx = backBtnSize,
+            paddingPx = backBtnPad,
+        )
         setSize(binding.btnSettings, topBtnSize, topBtnSize)
         binding.btnSettings.setPadding(topBtnPad, topBtnPad, topBtnPad, topBtnPad)
 
@@ -423,8 +427,11 @@ internal object PlayerUiMode {
             scaledSidebarPx(
                 blbl.cat3399.R.dimen.sidebar_settings_padding_tv,
             )
-        setSize(binding.btnBack, backBtnSize, backBtnSize)
-        binding.btnBack.setPadding(backBtnPad, backBtnPad, backBtnPad, backBtnPad)
+        BackButtonSizingHelper.applySizeAndPadding(
+            view = binding.btnBack,
+            sizePx = backBtnSize,
+            paddingPx = backBtnPad,
+        )
         setSize(binding.btnSettings, topBtnSize, topBtnSize)
         binding.btnSettings.setPadding(topBtnPad, topBtnPad, topBtnPad, topBtnPad)
 

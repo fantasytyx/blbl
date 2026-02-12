@@ -166,7 +166,7 @@ internal class DpadGridController(
         }
 
         val focused = recyclerView.rootView?.findFocus()
-        if (focused != null && !isDescendantOf(focused, recyclerView)) {
+        if (focused != null && !FocusTreeUtils.isDescendantOf(focused, recyclerView)) {
             clearPendingFocusAfterLoadMore()
             return false
         }
@@ -227,14 +227,14 @@ internal class DpadGridController(
     private fun handleDpadLeft(itemView: View): Boolean {
         val rootItem = recyclerView.findContainingItemView(itemView) ?: itemView
         val next = FocusFinder.getInstance().findNextFocus(recyclerView, rootItem, View.FOCUS_LEFT)
-        if (next != null && isDescendantOf(next, recyclerView)) return false
+        if (next != null && FocusTreeUtils.isDescendantOf(next, recyclerView)) return false
         return callbacks.onLeftEdge()
     }
 
     private fun handleDpadRight(itemView: View): Boolean {
         val rootItem = recyclerView.findContainingItemView(itemView) ?: itemView
         val next = FocusFinder.getInstance().findNextFocus(recyclerView, rootItem, View.FOCUS_RIGHT)
-        if (next != null && isDescendantOf(next, recyclerView)) return false
+        if (next != null && FocusTreeUtils.isDescendantOf(next, recyclerView)) return false
         if (!config.consumeRightEdge) return false
         callbacks.onRightEdge()
         // No outflow on the right edge.
@@ -244,7 +244,7 @@ internal class DpadGridController(
     private fun handleDpadDown(itemView: View, position: Int): Boolean {
         val rootItem = recyclerView.findContainingItemView(itemView) ?: itemView
         val next = FocusFinder.getInstance().findNextFocus(recyclerView, rootItem, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, recyclerView)) {
+        if (next != null && FocusTreeUtils.isDescendantOf(next, recyclerView)) {
             // Consume even when an in-grid next focus exists. Letting the system handle the event
             // can occasionally pick a "better" candidate outside the RecyclerView (e.g. sidebar),
             // especially during layout/adapter updates while the user is holding DPAD_DOWN.
@@ -286,10 +286,10 @@ internal class DpadGridController(
     private fun tryFocusNextDownFromCurrent(): Boolean {
         if (!config.isEnabled()) return false
         val focused = recyclerView.findFocus() ?: return false
-        if (!isDescendantOf(focused, recyclerView)) return false
+        if (!FocusTreeUtils.isDescendantOf(focused, recyclerView)) return false
         val itemView = recyclerView.findContainingItemView(focused) ?: return false
         val next = FocusFinder.getInstance().findNextFocus(recyclerView, itemView, View.FOCUS_DOWN)
-        if (next != null && isDescendantOf(next, recyclerView)) {
+        if (next != null && FocusTreeUtils.isDescendantOf(next, recyclerView)) {
             next.requestFocus()
             return true
         }
@@ -307,15 +307,6 @@ internal class DpadGridController(
                 recyclerView.post { recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus() }
             }
         return true
-    }
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
     }
 
     private fun spanCountForLayoutManager(): Int? {

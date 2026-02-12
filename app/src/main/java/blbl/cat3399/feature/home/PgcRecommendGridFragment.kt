@@ -17,6 +17,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiSeason
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.TabSwitchFocusTarget
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentVideoGridBinding
@@ -159,7 +160,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         if (pendingRestorePosition != null) return false
 
         val focused = activity?.currentFocus
-        if (focused != null && focused != binding.recycler && isDescendantOf(focused, binding.recycler)) {
+        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
             pendingFocusFirstCardFromTab = false
             pendingFocusFirstCardFromContentSwitch = false
             return false
@@ -169,7 +170,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         val tabLayout =
             parentView?.findViewById<com.google.android.material.tabs.TabLayout?>(R.id.tab_layout)
         if (pendingFocusFirstCardFromTab) {
-            if (focused == null || tabLayout == null || !isDescendantOf(focused, tabLayout)) {
+            if (focused == null || tabLayout == null || !FocusTreeUtils.isDescendantOf(focused, tabLayout)) {
                 pendingFocusFirstCardFromTab = false
             }
         }
@@ -336,15 +337,6 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
                 ?: tabStrip.getChildAt(prev)?.requestFocus()
         }
         return true
-    }
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
     }
 
     override fun onDestroyView() {

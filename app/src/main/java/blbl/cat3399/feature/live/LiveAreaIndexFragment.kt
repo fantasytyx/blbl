@@ -13,6 +13,8 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
@@ -153,15 +155,12 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
     }
 
     private fun spanCountForWidth(): Int {
-        val override = BiliClient.prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return when {
-            widthDp >= 1100 -> 4
-            widthDp >= 800 -> 3
-            else -> 2
-        }
+        return GridSpanPolicy.fixedSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = BiliClient.prefs.gridSpanCount,
+        )
     }
 
     override fun requestFocusFirstCardFromTab(): Boolean {
@@ -249,7 +248,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         if (!isResumed) return false
 
         val focused = activity?.currentFocus
-        if (focused != null && focused != binding.recycler && isDescendantOf(focused, binding.recycler)) {
+        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
             pendingFocusFirstCardFromTab = false
             pendingFocusFirstCardFromContentSwitch = false
             return false
@@ -259,7 +258,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         val tabLayout =
             parentView?.findViewById<com.google.android.material.tabs.TabLayout?>(blbl.cat3399.R.id.tab_layout)
         if (pendingFocusFirstCardFromTab) {
-            if (focused == null || tabLayout == null || !isDescendantOf(focused, tabLayout)) {
+            if (focused == null || tabLayout == null || !FocusTreeUtils.isDescendantOf(focused, tabLayout)) {
                 pendingFocusFirstCardFromTab = false
             }
         }
@@ -338,15 +337,6 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         dpadGridController = null
         _binding = null
         super.onDestroyView()
-    }
-
-    private fun isDescendantOf(child: View, parent: View): Boolean {
-        var cur: View? = child
-        while (cur != null) {
-            if (cur === parent) return true
-            cur = (cur.parent as? View)
-        }
-        return false
     }
 
     companion object {

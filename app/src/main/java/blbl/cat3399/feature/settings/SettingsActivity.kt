@@ -26,6 +26,8 @@ import blbl.cat3399.core.log.LogExporter
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.BackButtonSizingHelper
+import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.SingleChoiceDialog
@@ -155,14 +157,14 @@ class SettingsActivity : BaseActivity() {
                         pendingRestoreBack = false
                     }
 
-                    isDescendantOf(newFocus, binding.recyclerLeft) -> {
+                    FocusTreeUtils.isDescendantOf(newFocus, binding.recyclerLeft) -> {
                         val holder = binding.recyclerLeft.findContainingViewHolder(newFocus) ?: return@OnGlobalFocusChangeListener
                         val pos = holder.bindingAdapterPosition.takeIf { it != RecyclerView.NO_POSITION } ?: return@OnGlobalFocusChangeListener
                         lastFocusedLeftIndex = pos
                         if (pendingRestoreLeftIndex == pos) pendingRestoreLeftIndex = null
                     }
 
-                    isDescendantOf(newFocus, binding.recyclerRight) -> {
+                    FocusTreeUtils.isDescendantOf(newFocus, binding.recyclerRight) -> {
                         val itemView = binding.recyclerRight.findContainingItemView(newFocus) ?: newFocus
                         val title = (itemView.tag as? String)?.takeIf { it.isNotBlank() }
                         if (title != null) lastFocusedRightTitle = title
@@ -206,33 +208,11 @@ class SettingsActivity : BaseActivity() {
             lp.width = widthPx
             binding.recyclerLeft.layoutParams = lp
         }
-
-        fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * uiScale).roundToInt().coerceAtLeast(0)
-
-        val backSizePx =
-            scaledPx(
-                blbl.cat3399.R.dimen.sidebar_settings_size_tv,
-            ).coerceAtLeast(1)
-        val backPadPx =
-            scaledPx(
-                blbl.cat3399.R.dimen.sidebar_settings_padding_tv,
-            )
-
-        val backLp = binding.btnBack.layoutParams
-        if (backLp.width != backSizePx || backLp.height != backSizePx) {
-            backLp.width = backSizePx
-            backLp.height = backSizePx
-            binding.btnBack.layoutParams = backLp
-        }
-        if (
-            binding.btnBack.paddingLeft != backPadPx ||
-            binding.btnBack.paddingTop != backPadPx ||
-            binding.btnBack.paddingRight != backPadPx ||
-            binding.btnBack.paddingBottom != backPadPx
-        ) {
-            binding.btnBack.setPadding(backPadPx, backPadPx, backPadPx, backPadPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = binding.btnBack,
+            resources = resources,
+            sidebarScale = uiScale,
+        )
     }
 
     private fun ensureInitialFocus() {
@@ -1017,15 +997,6 @@ class SettingsActivity : BaseActivity() {
             binding.recyclerLeft.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus()
         }
         return true
-    }
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
     }
 
     private fun showProjectDialog() {

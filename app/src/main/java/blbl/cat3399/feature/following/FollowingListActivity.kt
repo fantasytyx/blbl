@@ -17,6 +17,7 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.paging.PagedGridStateMachine
 import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.tv.RemoteKeys
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.Immersive
@@ -25,7 +26,6 @@ import blbl.cat3399.databinding.ActivityFollowingListBinding
 import blbl.cat3399.feature.login.QrLoginActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class FollowingListActivity : BaseActivity() {
     private lateinit var binding: ActivityFollowingListBinding
@@ -123,28 +123,11 @@ class FollowingListActivity : BaseActivity() {
 
     private fun applyUiMode() {
         val sidebarScale = UiScale.factor(this, BiliClient.prefs.sidebarSize)
-        fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
-
-        val sizePx =
-            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
-        val padPx =
-            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_padding_tv)
-
-        val lp = binding.btnBack.layoutParams
-        if (lp.width != sizePx || lp.height != sizePx) {
-            lp.width = sizePx
-            lp.height = sizePx
-            binding.btnBack.layoutParams = lp
-        }
-        if (
-            binding.btnBack.paddingLeft != padPx ||
-            binding.btnBack.paddingTop != padPx ||
-            binding.btnBack.paddingRight != padPx ||
-            binding.btnBack.paddingBottom != padPx
-        ) {
-            binding.btnBack.setPadding(padPx, padPx, padPx, padPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = binding.btnBack,
+            resources = resources,
+            sidebarScale = sidebarScale,
+        )
     }
 
     override fun onResume() {

@@ -14,9 +14,12 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.LiveRoomCard
+import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.paging.PagedGridStateMachine
 import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentLiveGridBinding
 import blbl.cat3399.ui.RefreshKeyHandler
@@ -250,20 +253,25 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
     }
 
     private fun spanCountForWidth(): Int {
-        val override = blbl.cat3399.core.net.BiliClient.prefs.gridSpanCount
+        val override = BiliClient.prefs.gridSpanCount
         if (override > 0) return override.coerceIn(1, 6)
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return autoSpanCountForWidthDp(widthDp)
+        return GridSpanPolicy.autoSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = override,
+            uiScale = UiScale.factor(requireContext()),
+        )
     }
 
     private fun autoSpanCountForWidthDp(widthDp: Float): Int {
-        val override = blbl.cat3399.core.net.BiliClient.prefs.gridSpanCount
+        val override = BiliClient.prefs.gridSpanCount
         if (override > 0) return override.coerceIn(1, 6)
-        val uiScale = UiScale.factor(requireContext())
-        val minCardWidthDp = 210f * uiScale
-        val auto = (widthDp / minCardWidthDp).toInt()
-        return auto.coerceIn(2, 6)
+        return GridSpanPolicy.autoSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = override,
+            uiScale = UiScale.factor(requireContext()),
+        )
     }
 
     private fun updateRecyclerSpanCountIfNeeded(force: Boolean = false) {
@@ -299,7 +307,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         if (!isResumed) return false
 
         val focused = activity?.currentFocus
-        if (focused != null && focused != binding.recycler && isDescendantOf(focused, binding.recycler)) {
+        if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
             pendingFocusFirstCardFromTab = false
             pendingFocusFirstCardFromContentSwitch = false
             return false
@@ -309,7 +317,7 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         val tabLayout =
             parentView?.findViewById<com.google.android.material.tabs.TabLayout?>(blbl.cat3399.R.id.tab_layout)
         if (pendingFocusFirstCardFromTab) {
-            if (focused == null || tabLayout == null || !isDescendantOf(focused, tabLayout)) {
+            if (focused == null || tabLayout == null || !FocusTreeUtils.isDescendantOf(focused, tabLayout)) {
                 pendingFocusFirstCardFromTab = false
             }
         }
@@ -422,15 +430,6 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         val parentView = parentFragment?.view ?: return false
         val back = parentView.findViewById<View?>(blbl.cat3399.R.id.btn_back) ?: return false
         return back.requestFocus()
-    }
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
     }
 
     private fun switchToNextTabFromContentEdge(): Boolean {

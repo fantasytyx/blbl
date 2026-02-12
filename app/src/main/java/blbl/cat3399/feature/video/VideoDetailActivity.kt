@@ -14,7 +14,9 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.ActivityStackLimiter
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.ActivityVideoDetailBinding
@@ -28,7 +30,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import kotlin.math.roundToInt
 
 class VideoDetailActivity : BaseActivity() {
     private lateinit var binding: ActivityVideoDetailBinding
@@ -190,26 +191,11 @@ class VideoDetailActivity : BaseActivity() {
 
     private fun applyUiMode() {
         val sidebarScale = UiScale.factor(this, BiliClient.prefs.sidebarSize)
-        fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
-
-        val sizePx = scaledPx(blbl.cat3399.R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
-        val padPx = scaledPx(blbl.cat3399.R.dimen.sidebar_settings_padding_tv)
-
-        val lp = binding.btnBack.layoutParams
-        if (lp.width != sizePx || lp.height != sizePx) {
-            lp.width = sizePx
-            lp.height = sizePx
-            binding.btnBack.layoutParams = lp
-        }
-        if (
-            binding.btnBack.paddingLeft != padPx ||
-            binding.btnBack.paddingTop != padPx ||
-            binding.btnBack.paddingRight != padPx ||
-            binding.btnBack.paddingBottom != padPx
-        ) {
-            binding.btnBack.setPadding(padPx, padPx, padPx, padPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = binding.btnBack,
+            resources = resources,
+            sidebarScale = sidebarScale,
+        )
     }
 
     private fun load() {
@@ -479,15 +465,12 @@ class VideoDetailActivity : BaseActivity() {
     }
 
     private fun spanCountForWidth(): Int {
-        val override = BiliClient.prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return when {
-            widthDp >= 1100 -> 4
-            widthDp >= 800 -> 3
-            else -> 2
-        }
+        return GridSpanPolicy.fixedSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = BiliClient.prefs.gridSpanCount,
+        )
     }
 
     companion object {

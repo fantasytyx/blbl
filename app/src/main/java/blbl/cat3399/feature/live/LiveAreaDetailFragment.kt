@@ -14,12 +14,14 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentLiveAreaDetailBinding
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class LiveAreaDetailFragment : Fragment() {
     private var _binding: FragmentLiveAreaDetailBinding? = null
@@ -161,7 +163,7 @@ class LiveAreaDetailFragment : Fragment() {
         binding.root.post {
             if (_binding == null || !isAdded) return@post
             val cur = activity?.currentFocus
-            if (cur == null || !isDescendantOf(cur, binding.root)) {
+            if (cur == null || !FocusTreeUtils.isDescendantOf(cur, binding.root)) {
                 binding.btnBack.requestFocus()
             }
         }
@@ -174,28 +176,11 @@ class LiveAreaDetailFragment : Fragment() {
     private fun applyBackButtonSizing() {
         val b = _binding ?: return
         val sidebarScale = UiScale.factor(requireContext(), BiliClient.prefs.sidebarSize)
-        fun px(id: Int): Int = b.root.resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
-
-        val sizePx =
-            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
-        val padPx =
-            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_padding_tv)
-
-        val lp = b.btnBack.layoutParams
-        if (lp.width != sizePx || lp.height != sizePx) {
-            lp.width = sizePx
-            lp.height = sizePx
-            b.btnBack.layoutParams = lp
-        }
-        if (
-            b.btnBack.paddingLeft != padPx ||
-            b.btnBack.paddingTop != padPx ||
-            b.btnBack.paddingRight != padPx ||
-            b.btnBack.paddingBottom != padPx
-        ) {
-            b.btnBack.setPadding(padPx, padPx, padPx, padPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = b.btnBack,
+            resources = b.root.resources,
+            sidebarScale = sidebarScale,
+        )
     }
 
     companion object {
@@ -234,16 +219,21 @@ class LiveAreaDetailFragment : Fragment() {
         if (override > 0) return override.coerceIn(1, 6)
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return autoSpanCountForWidthDp(widthDp)
+        return GridSpanPolicy.autoSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = override,
+            uiScale = UiScale.factor(requireContext()),
+        )
     }
 
     private fun autoSpanCountForWidthDp(widthDp: Float): Int {
         val override = BiliClient.prefs.gridSpanCount
         if (override > 0) return override.coerceIn(1, 6)
-        val uiScale = UiScale.factor(requireContext())
-        val minCardWidthDp = 210f * uiScale
-        val auto = (widthDp / minCardWidthDp).toInt()
-        return auto.coerceIn(2, 6)
+        return GridSpanPolicy.autoSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = override,
+            uiScale = UiScale.factor(requireContext()),
+        )
     }
 
     private fun updateRecyclerSpanCountIfNeeded(force: Boolean = false) {
@@ -349,7 +339,7 @@ class LiveAreaDetailFragment : Fragment() {
 
         val recycler = b.recycler
         val focused = activity?.currentFocus
-        if (focused != null && isDescendantOf(focused, recycler)) {
+        if (focused != null && FocusTreeUtils.isDescendantOf(focused, recycler)) {
             pendingFocusFirstItem = false
             return
         }
@@ -371,12 +361,4 @@ class LiveAreaDetailFragment : Fragment() {
         }
     }
 
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
-    }
 }

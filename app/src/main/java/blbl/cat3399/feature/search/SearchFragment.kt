@@ -28,6 +28,8 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiSeason
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.enableDpadTabFocus
@@ -864,7 +866,7 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
             }
 
             val focused = activity?.currentFocus
-            if (focused != null && isDescendantOf(focused, binding.recyclerResults) && focused != binding.recyclerResults) {
+            if (focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recyclerResults) && focused != binding.recyclerResults) {
                 pendingFocusFirstResultCardFromTabSwitch = false
                 return false
             }
@@ -927,15 +929,6 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
             }
             return true
         }
-
-	    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-	        var current: View? = view
-	        while (current != null) {
-	            if (current == ancestor) return true
-	            current = current.parent as? View
-	        }
-	        return false
-	    }
 
 	    private fun focusKeyAt(pos: Int): Boolean {
 	        val count = binding.recyclerKeys.adapter?.itemCount ?: return false
@@ -1193,15 +1186,12 @@ class SearchFragment : Fragment(), BackPressHandler, RefreshKeyHandler {
     }
 
     private fun spanCountForWidth(): Int {
-        val override = blbl.cat3399.core.net.BiliClient.prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return when {
-            widthDp >= 1100 -> 4
-            widthDp >= 800 -> 3
-            else -> 2
-        }
+        return GridSpanPolicy.fixedSpanCountForWidthDp(
+            widthDp = widthDp,
+            overrideSpanCount = BiliClient.prefs.gridSpanCount,
+        )
     }
 
     override fun onResume() {

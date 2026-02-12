@@ -18,6 +18,8 @@ import blbl.cat3399.core.image.ImageUrl
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiEpisode
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.BackButtonSizingHelper
+import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.util.Format
 import blbl.cat3399.databinding.FragmentMyBangumiDetailBinding
@@ -120,28 +122,11 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     private fun applyBackButtonSizing() {
         val b = _binding ?: return
         val sidebarScale = UiScale.factor(requireContext(), BiliClient.prefs.sidebarSize)
-        fun px(id: Int): Int = b.root.resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
-
-        val sizePx =
-            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
-        val padPx =
-            scaledPx(blbl.cat3399.R.dimen.sidebar_settings_padding_tv)
-
-        val lp = b.btnBack.layoutParams
-        if (lp.width != sizePx || lp.height != sizePx) {
-            lp.width = sizePx
-            lp.height = sizePx
-            b.btnBack.layoutParams = lp
-        }
-        if (
-            b.btnBack.paddingLeft != padPx ||
-            b.btnBack.paddingTop != padPx ||
-            b.btnBack.paddingRight != padPx ||
-            b.btnBack.paddingBottom != padPx
-        ) {
-            b.btnBack.setPadding(padPx, padPx, padPx, padPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = b.btnBack,
+            resources = b.root.resources,
+            sidebarScale = sidebarScale,
+        )
     }
 
     override fun handleRefreshKey(): Boolean {
@@ -161,7 +146,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             return
         }
         val focused = activity?.currentFocus
-        if (focused != null && isDescendantOf(focused, b.root) && focused != b.btnBack) {
+        if (focused != null && FocusTreeUtils.isDescendantOf(focused, b.root) && focused != b.btnBack) {
             pendingAutoFocusPrimary = false
             return
         }
@@ -170,7 +155,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             if (!isResumed) return@post
             if (!pendingAutoFocusPrimary) return@post
             val focused2 = activity?.currentFocus
-            if (focused2 != null && isDescendantOf(focused2, bb.root) && focused2 != bb.btnBack) {
+            if (focused2 != null && FocusTreeUtils.isDescendantOf(focused2, bb.root) && focused2 != bb.btnBack) {
                 pendingAutoFocusPrimary = false
                 return@post
             }
@@ -189,12 +174,12 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
 
         val recycler = b.recyclerEpisodes
         val focused = activity?.currentFocus
-        if (focused != null && isDescendantOf(focused, recycler)) {
+        if (focused != null && FocusTreeUtils.isDescendantOf(focused, recycler)) {
             pendingAutoFocusFirstEpisode = false
             return
         }
         // Don't steal focus if user has already moved inside this page.
-        if (focused != null && isDescendantOf(focused, b.root) && focused != b.btnBack && focused != b.btnPrimary) {
+        if (focused != null && FocusTreeUtils.isDescendantOf(focused, b.root) && focused != b.btnBack && focused != b.btnPrimary) {
             pendingAutoFocusFirstEpisode = false
             return
         }
@@ -219,7 +204,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                 } ?: 0
             val safeTargetPos = targetPos.coerceIn(0, epAdapter.itemCount - 1)
             val focused2 = activity?.currentFocus
-            if (focused2 != null && isDescendantOf(focused2, r)) {
+            if (focused2 != null && FocusTreeUtils.isDescendantOf(focused2, r)) {
                 pendingAutoFocusFirstEpisode = false
                 return@post
             }
@@ -473,7 +458,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                             KeyEvent.KEYCODE_DPAD_DOWN -> {
                                 // Bottom edge: don't escape to sidebar/global UI.
                                 val next = view.focusSearch(View.FOCUS_DOWN)
-                                next == null || !isDescendantOf(next, b.root)
+                                next == null || !FocusTreeUtils.isDescendantOf(next, b.root)
                             }
 
                             KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -486,7 +471,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                                 val itemView = recycler.findContainingItemView(view) ?: view
                                 val next =
                                     FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_RIGHT)
-                                if (next != null && isDescendantOf(next, recycler)) {
+                                if (next != null && FocusTreeUtils.isDescendantOf(next, recycler)) {
                                     if (next.requestFocus()) return@setOnKeyListener true
                                 }
 
@@ -508,7 +493,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                                 val itemView = recycler.findContainingItemView(view) ?: view
                                 val next =
                                     FocusFinder.getInstance().findNextFocus(recycler, itemView, View.FOCUS_LEFT)
-                                if (next != null && isDescendantOf(next, recycler)) {
+                                if (next != null && FocusTreeUtils.isDescendantOf(next, recycler)) {
                                     if (next.requestFocus()) return@setOnKeyListener true
                                 }
 

@@ -1,6 +1,5 @@
 package blbl.cat3399.feature.my
 
-import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import blbl.cat3399.R
@@ -66,13 +65,4 @@ fun Fragment.switchToPrevMyTabFromContentEdge(): Boolean {
             ?: tabStrip.getChildAt(prev)?.requestFocus()
     }
     return true
-}
-
-fun isDescendantOf(view: View, ancestor: View): Boolean {
-    var current: View? = view
-    while (current != null) {
-        if (current == ancestor) return true
-        current = current.parent as? View
-    }
-    return false
 }

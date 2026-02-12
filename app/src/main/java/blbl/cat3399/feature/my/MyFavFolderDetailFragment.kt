@@ -15,7 +15,9 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.R
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentMyFavFolderDetailBinding
 import blbl.cat3399.feature.following.openUpDetailFromVideoCard
@@ -27,7 +29,6 @@ import blbl.cat3399.feature.video.VideoCardAdapter
 import blbl.cat3399.ui.RefreshKeyHandler
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
     private var _binding: FragmentMyFavFolderDetailBinding? = null
@@ -173,26 +174,11 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
 
     private fun applyBackButtonSizing() {
         val sidebarScale = UiScale.factor(requireContext(), BiliClient.prefs.sidebarSize)
-        fun px(id: Int): Int = resources.getDimensionPixelSize(id)
-        fun scaledPx(id: Int): Int = (px(id) * sidebarScale).roundToInt().coerceAtLeast(0)
-
-        val sizePx = scaledPx(R.dimen.sidebar_settings_size_tv).coerceAtLeast(1)
-        val padPx = scaledPx(R.dimen.sidebar_settings_padding_tv)
-
-        val lp = binding.btnBack.layoutParams
-        if (lp.width != sizePx || lp.height != sizePx) {
-            lp.width = sizePx
-            lp.height = sizePx
-            binding.btnBack.layoutParams = lp
-        }
-        if (
-            binding.btnBack.paddingLeft != padPx ||
-            binding.btnBack.paddingTop != padPx ||
-            binding.btnBack.paddingRight != padPx ||
-            binding.btnBack.paddingBottom != padPx
-        ) {
-            binding.btnBack.setPadding(padPx, padPx, padPx, padPx)
-        }
+        BackButtonSizingHelper.applySidebarSizing(
+            view = binding.btnBack,
+            resources = resources,
+            sidebarScale = sidebarScale,
+        )
     }
 
     override fun handleRefreshKey(): Boolean {
@@ -246,7 +232,7 @@ class MyFavFolderDetailFragment : Fragment(), RefreshKeyHandler {
         if (adapter.itemCount <= 0) return
 
         val focused = activity?.currentFocus
-        if (focused != null && isDescendantOf(focused, binding.recycler)) {
+        if (focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
             pendingFocusFirstItem = false
             return
         }

@@ -16,6 +16,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.databinding.FragmentDynamicBinding
 import blbl.cat3399.databinding.FragmentDynamicLoginBinding
@@ -396,18 +397,14 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
     }
 
     private fun spanCountForWidth(): Int {
-        val prefs = blbl.cat3399.core.net.BiliClient.prefs
-        val dyn = prefs.dynamicGridSpanCount
-        if (dyn > 0) return dyn.coerceIn(1, 6)
-        val override = prefs.gridSpanCount
-        if (override > 0) return override.coerceIn(1, 6)
+        val prefs = BiliClient.prefs
         val dm = resources.displayMetrics
         val widthDp = dm.widthPixels / dm.density
-        return when {
-            widthDp >= 1100 -> 4
-            widthDp >= 800 -> 3
-            else -> 2
-        }
+        return GridSpanPolicy.dynamicSpanCountForWidthDp(
+            widthDp = widthDp,
+            dynamicOverrideSpanCount = prefs.dynamicGridSpanCount,
+            globalOverrideSpanCount = prefs.gridSpanCount,
+        )
     }
 
     private fun focusSelectedFollowingIfAvailable(): Boolean {
@@ -445,15 +442,6 @@ class DynamicFragment : Fragment(), RefreshKeyHandler {
             }
         }
         return true
-    }
-
-    private fun isDescendantOf(view: View, ancestor: View): Boolean {
-        var current: View? = view
-        while (current != null) {
-            if (current == ancestor) return true
-            current = current.parent as? View
-        }
-        return false
     }
 
     override fun onDestroyView() {
