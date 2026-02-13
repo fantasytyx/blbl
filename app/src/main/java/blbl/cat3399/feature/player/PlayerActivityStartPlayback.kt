@@ -1,5 +1,6 @@
 package blbl.cat3399.feature.player
 
+import android.content.Intent
 import android.net.Uri
 import android.view.View
 import android.widget.Toast
@@ -8,6 +9,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.util.parseBangumiRedirectUrl
+import blbl.cat3399.feature.my.BangumiDetailActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
@@ -181,6 +184,29 @@ internal fun PlayerActivity.startPlayback(
                     }
                 val viewData = viewJson.await()?.optJSONObject("data") ?: JSONObject()
                 trace?.log("view:done")
+
+                val bangumiRedirect = parseBangumiRedirectUrl(viewData.optString("redirect_url", ""))
+                val isAlreadyPgc =
+                    currentEpId != null ||
+                        playlistSource?.trim().orEmpty().startsWith("Bangumi:")
+                if (bangumiRedirect != null && !isAlreadyPgc) {
+                    startActivity(
+                        Intent(this@startPlayback, BangumiDetailActivity::class.java)
+                            .putExtra(BangumiDetailActivity.EXTRA_IS_DRAMA, false)
+                            .apply {
+                                bangumiRedirect.epId?.let { epId ->
+                                    putExtra(BangumiDetailActivity.EXTRA_EP_ID, epId)
+                                    putExtra(BangumiDetailActivity.EXTRA_CONTINUE_EP_ID, epId)
+                                }
+                                bangumiRedirect.seasonId?.let { seasonId ->
+                                    putExtra(BangumiDetailActivity.EXTRA_SEASON_ID, seasonId)
+                                }
+                            },
+                    )
+                    finish()
+                    return@launch
+                }
+
                 val title = viewData.optString("title", "")
                 if (title.isNotBlank()) binding.tvTitle.text = title
                 currentViewDurationMs = viewData.optLong("duration", -1L).takeIf { it > 0 }?.times(1000L)

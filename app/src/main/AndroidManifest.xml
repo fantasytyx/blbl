@@ -50,6 +50,10 @@
             android:screenOrientation="sensorLandscape" />
 
         <activity
+            android:name=".feature.my.BangumiDetailActivity"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
             android:name=".ui.MainActivity"
             android:banner="@drawable/tv_banner"
             android:exported="true"

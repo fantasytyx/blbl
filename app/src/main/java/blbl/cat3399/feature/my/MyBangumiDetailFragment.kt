@@ -36,7 +36,8 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     private var _binding: FragmentMyBangumiDetailBinding? = null
     private val binding get() = _binding!!
 
-    private val seasonId: Long by lazy { requireArguments().getLong(ARG_SEASON_ID) }
+    private val seasonIdArg: Long? by lazy { requireArguments().getLong(ARG_SEASON_ID, -1L).takeIf { it > 0L } }
+    private val epIdArg: Long? by lazy { requireArguments().getLong(ARG_EP_ID, -1L).takeIf { it > 0L } }
     private val isDrama: Boolean by lazy { requireArguments().getBoolean(ARG_IS_DRAMA) }
     private val continueEpIdArg: Long? by lazy { requireArguments().getLong(ARG_CONTINUE_EP_ID, -1L).takeIf { it > 0 } }
     private val continueEpIndexArg: Int? by lazy { requireArguments().getInt(ARG_CONTINUE_EP_INDEX, -1).takeIf { it > 0 } }
@@ -45,6 +46,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     private var currentEpisodes: List<BangumiEpisode> = emptyList()
     private var continueEpisode: BangumiEpisode? = null
     private var episodeOrderReversed: Boolean = false
+    private var resolvedSeasonId: Long? = null
     private var pendingAutoFocusFirstEpisode: Boolean = true
     private var autoFocusAttempts: Int = 0
     private var epDataObserver: RecyclerView.AdapterDataObserver? = null
@@ -65,7 +67,10 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
-        binding.btnBack.setOnClickListener { parentFragmentManager.popBackStackImmediate() }
+        binding.btnBack.setOnClickListener {
+            val popped = parentFragmentManager.popBackStackImmediate()
+            if (!popped) activity?.finish()
+        }
         binding.btnSecondary.text = if (isDrama) "已追剧" else "已追番"
         applyBackButtonSizing()
 
@@ -225,7 +230,16 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
         loadJob =
             viewLifecycleOwner.lifecycleScope.launch {
             try {
-                val detail = BiliApi.bangumiSeasonDetail(seasonId = seasonId)
+                val seasonId = seasonIdArg
+                val epId = epIdArg
+                if (seasonId == null && epId == null) error("缺少 seasonId/epId")
+                val detail =
+                    if (seasonId != null) {
+                        BiliApi.bangumiSeasonDetail(seasonId = seasonId)
+                    } else {
+                        BiliApi.bangumiSeasonDetailByEpId(epId = epId ?: 0L)
+                    }
+                resolvedSeasonId = detail.seasonId.takeIf { it > 0L } ?: seasonId
                 val b = _binding ?: return@launch
                 b.tvTitle.text = detail.title
                 b.tvDesc.text = detail.evaluate.orEmpty()
@@ -250,7 +264,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
                 tryAutoFocusPrimary()
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                AppLog.e("MyBangumiDetail", "load failed seasonId=$seasonId", t)
+                AppLog.e("MyBangumiDetail", "load failed seasonId=${seasonIdArg ?: -1L} epId=${epIdArg ?: -1L}", t)
                 context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
             }
         }
@@ -518,6 +532,11 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     }
 
     private fun playEpisode(ep: BangumiEpisode, pos: Int) {
+        val seasonId = resolvedSeasonId ?: seasonIdArg
+        if (seasonId == null || seasonId <= 0L) {
+            Toast.makeText(requireContext(), "缺少 seasonId", Toast.LENGTH_SHORT).show()
+            return
+        }
         val bvid = ep.bvid.orEmpty()
         val cid = ep.cid ?: -1L
         if (bvid.isBlank() || cid <= 0) {
@@ -568,6 +587,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
 
     companion object {
         private const val ARG_SEASON_ID = "season_id"
+        private const val ARG_EP_ID = "ep_id"
         private const val ARG_IS_DRAMA = "is_drama"
         private const val ARG_CONTINUE_EP_ID = "continue_ep_id"
         private const val ARG_CONTINUE_EP_INDEX = "continue_ep_index"
@@ -582,6 +602,21 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             MyBangumiDetailFragment().apply {
                 arguments = Bundle().apply {
                     putLong(ARG_SEASON_ID, seasonId)
+                    putBoolean(ARG_IS_DRAMA, isDrama)
+                    continueEpId?.let { putLong(ARG_CONTINUE_EP_ID, it) }
+                    continueEpIndex?.let { putInt(ARG_CONTINUE_EP_INDEX, it) }
+                }
+            }
+
+        fun newInstanceByEpId(
+            epId: Long,
+            isDrama: Boolean,
+            continueEpId: Long?,
+            continueEpIndex: Int?,
+        ): MyBangumiDetailFragment =
+            MyBangumiDetailFragment().apply {
+                arguments = Bundle().apply {
+                    putLong(ARG_EP_ID, epId)
                     putBoolean(ARG_IS_DRAMA, isDrama)
                     continueEpId?.let { putLong(ARG_CONTINUE_EP_ID, it) }
                     continueEpIndex?.let { putInt(ARG_CONTINUE_EP_INDEX, it) }

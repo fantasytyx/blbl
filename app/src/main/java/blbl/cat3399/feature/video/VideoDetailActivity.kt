@@ -2,14 +2,18 @@ package blbl.cat3399.feature.video
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.widget.FrameLayout
+import android.widget.ProgressBar
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
+import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
@@ -19,8 +23,10 @@ import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
+import blbl.cat3399.core.util.parseBangumiRedirectUrl
 import blbl.cat3399.databinding.ActivityVideoDetailBinding
 import blbl.cat3399.feature.following.UpDetailActivity
+import blbl.cat3399.feature.my.BangumiDetailActivity
 import blbl.cat3399.feature.player.PlayerActivity
 import blbl.cat3399.feature.player.PlayerPlaylistItem
 import blbl.cat3399.feature.player.PlayerPlaylistStore
@@ -63,10 +69,6 @@ class VideoDetailActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ActivityStackLimiter.register(group = ACTIVITY_STACK_GROUP, activity = this, maxDepth = ACTIVITY_STACK_MAX_DEPTH)
-        binding = ActivityVideoDetailBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
-        applyUiMode()
 
         bvid = intent.getStringExtra(EXTRA_BVID).orEmpty().trim()
         cid = intent.getLongExtra(EXTRA_CID, -1L).takeIf { it > 0L }
@@ -85,6 +87,93 @@ class VideoDetailActivity : BaseActivity() {
             finish()
             return
         }
+
+        if (savedInstanceState != null) {
+            initUi()
+            load()
+            return
+        }
+
+        showLoadingUi()
+        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+
+        lifecycleScope.launch {
+            try {
+                val viewData = fetchViewData()
+                val bangumiRedirect = parseBangumiRedirectUrl(viewData.optString("redirect_url", ""))
+                if (bangumiRedirect != null) {
+                    startActivity(
+                        Intent(this@VideoDetailActivity, BangumiDetailActivity::class.java)
+                            .putExtra(BangumiDetailActivity.EXTRA_IS_DRAMA, false)
+                            .apply {
+                                bangumiRedirect.epId?.let { epId ->
+                                    putExtra(BangumiDetailActivity.EXTRA_EP_ID, epId)
+                                    putExtra(BangumiDetailActivity.EXTRA_CONTINUE_EP_ID, epId)
+                                }
+                                bangumiRedirect.seasonId?.let { seasonId ->
+                                    putExtra(BangumiDetailActivity.EXTRA_SEASON_ID, seasonId)
+                                }
+                            },
+                    )
+                    finish()
+                    return@launch
+                }
+
+                initUi()
+                load(prefetchedViewData = viewData)
+            } catch (t: Throwable) {
+                if (t is CancellationException) return@launch
+                Toast.makeText(this@VideoDetailActivity, t.message ?: "加载失败", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+        if (!this::binding.isInitialized) return
+        applyUiMode()
+        if (this::headerAdapter.isInitialized) headerAdapter.invalidateSizing()
+        if (this::recommendAdapter.isInitialized) recommendAdapter.invalidateSizing()
+    }
+
+    override fun onDestroy() {
+        ActivityStackLimiter.unregister(group = ACTIVITY_STACK_GROUP, activity = this)
+        super.onDestroy()
+    }
+
+    private fun applyUiMode() {
+        val sidebarScale = UiScale.factor(this, BiliClient.prefs.sidebarSize)
+        BackButtonSizingHelper.applySidebarSizing(
+            view = binding.btnBack,
+            resources = resources,
+            sidebarScale = sidebarScale,
+        )
+    }
+
+    private fun showLoadingUi() {
+        val root =
+            FrameLayout(this).apply {
+                setBackgroundResource(R.color.blbl_bg)
+                addView(
+                    ProgressBar(this@VideoDetailActivity),
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply {
+                        gravity = Gravity.CENTER
+                    },
+                )
+            }
+        setContentView(root)
+    }
+
+    private fun initUi() {
+        binding = ActivityVideoDetailBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+        applyUiMode()
 
         binding.btnBack.setOnClickListener { finish() }
 
@@ -173,32 +262,25 @@ class VideoDetailActivity : BaseActivity() {
         )
 
         binding.recycler.post { headerAdapter.requestFocusPlay() }
-        load()
     }
 
-    override fun onResume() {
-        super.onResume()
-        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
-        applyUiMode()
-        headerAdapter.invalidateSizing()
-        recommendAdapter.invalidateSizing()
-    }
+    private suspend fun fetchViewData(): JSONObject =
+        withContext(Dispatchers.IO) {
+            val json =
+                if (bvid.isNotBlank()) {
+                    BiliApi.view(bvid)
+                } else {
+                    BiliApi.view(aid ?: 0L)
+                }
+            val code = json.optInt("code", 0)
+            if (code != 0) {
+                val msg = json.optString("message", json.optString("msg", "加载失败")).ifBlank { "加载失败" }
+                throw IllegalStateException(msg)
+            }
+            json.optJSONObject("data") ?: JSONObject()
+        }
 
-    override fun onDestroy() {
-        ActivityStackLimiter.unregister(group = ACTIVITY_STACK_GROUP, activity = this)
-        super.onDestroy()
-    }
-
-    private fun applyUiMode() {
-        val sidebarScale = UiScale.factor(this, BiliClient.prefs.sidebarSize)
-        BackButtonSizingHelper.applySidebarSizing(
-            view = binding.btnBack,
-            resources = resources,
-            sidebarScale = sidebarScale,
-        )
-    }
-
-    private fun load() {
+    private fun load(prefetchedViewData: JSONObject? = null) {
         val codeToken = ++requestToken
         loadJob?.cancel()
         loadJob = null
@@ -208,22 +290,27 @@ class VideoDetailActivity : BaseActivity() {
         loadJob =
             lifecycleScope.launch {
                 try {
-                    val viewData =
-                        withContext(Dispatchers.IO) {
-                            val json =
-                                if (bvid.isNotBlank()) {
-                                    BiliApi.view(bvid)
-                                } else {
-                                    BiliApi.view(aid ?: 0L)
-                                }
-                            val code = json.optInt("code", 0)
-                            if (code != 0) {
-                                val msg = json.optString("message", json.optString("msg", "加载失败")).ifBlank { "加载失败" }
-                                throw IllegalStateException(msg)
-                            }
-                            json.optJSONObject("data") ?: JSONObject()
-                        }
+                    val viewData = prefetchedViewData ?: fetchViewData()
                     if (codeToken != requestToken) return@launch
+
+                    val bangumiRedirect = parseBangumiRedirectUrl(viewData.optString("redirect_url", ""))
+                    if (bangumiRedirect != null) {
+                        startActivity(
+                            Intent(this@VideoDetailActivity, BangumiDetailActivity::class.java)
+                                .putExtra(BangumiDetailActivity.EXTRA_IS_DRAMA, false)
+                                .apply {
+                                    bangumiRedirect.epId?.let { epId ->
+                                        putExtra(BangumiDetailActivity.EXTRA_EP_ID, epId)
+                                        putExtra(BangumiDetailActivity.EXTRA_CONTINUE_EP_ID, epId)
+                                    }
+                                    bangumiRedirect.seasonId?.let { seasonId ->
+                                        putExtra(BangumiDetailActivity.EXTRA_SEASON_ID, seasonId)
+                                    }
+                                },
+                        )
+                        finish()
+                        return@launch
+                    }
 
                     val resolvedBvid = viewData.optString("bvid", "").trim().takeIf { it.isNotBlank() } ?: bvid
                     val resolvedAid = viewData.optLong("aid").takeIf { it > 0L } ?: aid

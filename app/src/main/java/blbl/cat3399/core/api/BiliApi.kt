@@ -697,10 +697,30 @@ object BiliApi {
     }
 
     suspend fun bangumiSeasonDetail(seasonId: Long): BangumiSeasonDetail {
-        val url = BiliClient.withQuery(
-            "https://api.bilibili.com/pgc/view/web/season",
-            mapOf("season_id" to seasonId.toString()),
-        )
+        val safeSeasonId = seasonId.takeIf { it > 0L } ?: error("seasonId required")
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/pgc/view/web/season",
+                mapOf("season_id" to safeSeasonId.toString()),
+            )
+        return bangumiSeasonDetailInner(url = url, seasonId = safeSeasonId, epId = null)
+    }
+
+    suspend fun bangumiSeasonDetailByEpId(epId: Long): BangumiSeasonDetail {
+        val safeEpId = epId.takeIf { it > 0L } ?: error("epId required")
+        val url =
+            BiliClient.withQuery(
+                "https://api.bilibili.com/pgc/view/web/season",
+                mapOf("ep_id" to safeEpId.toString()),
+            )
+        return bangumiSeasonDetailInner(url = url, seasonId = null, epId = safeEpId)
+    }
+
+    private suspend fun bangumiSeasonDetailInner(
+        url: String,
+        seasonId: Long?,
+        epId: Long?,
+    ): BangumiSeasonDetail {
         val json = BiliClient.getJson(url)
         val code = json.optInt("code", 0)
         if (code != 0) {
@@ -718,24 +738,37 @@ object BiliApi {
         val views = stat.optLong("views").takeIf { it > 0 } ?: stat.optLong("view").takeIf { it > 0 }
         val danmaku = stat.optLong("danmakus").takeIf { it > 0 } ?: stat.optLong("danmaku").takeIf { it > 0 }
         val episodes = result.optJSONArray("episodes") ?: JSONArray()
+        val sections = result.optJSONArray("section") ?: JSONArray()
         val epList =
             withContext(Dispatchers.Default) {
-                val out = ArrayList<BangumiEpisode>(episodes.length())
-                for (i in 0 until episodes.length()) {
-                    val ep = episodes.optJSONObject(i) ?: continue
-                    val epId = ep.optLong("id").takeIf { it > 0 } ?: ep.optLong("ep_id").takeIf { it > 0 } ?: continue
-                    out.add(
-                        BangumiEpisode(
-                            epId = epId,
-                            aid = ep.optLong("aid").takeIf { it > 0 } ?: ep.optLong("avid").takeIf { it > 0 },
-                            cid = ep.optLong("cid").takeIf { it > 0 },
-                            bvid = ep.optString("bvid").takeIf { it.isNotBlank() },
-                            title = ep.optString("title", ""),
-                            longTitle = ep.optString("long_title", ""),
-                            coverUrl = ep.optString("cover").takeIf { it.isNotBlank() },
-                            badge = ep.optString("badge").takeIf { it.isNotBlank() },
-                        ),
-                    )
+                val out = ArrayList<BangumiEpisode>(episodes.length() + 64)
+                val seen = HashSet<Long>(episodes.length() * 2)
+
+                fun appendEpisodes(arr: JSONArray) {
+                    for (i in 0 until arr.length()) {
+                        val ep = arr.optJSONObject(i) ?: continue
+                        val parsedEpId = ep.optLong("id").takeIf { it > 0 } ?: ep.optLong("ep_id").takeIf { it > 0 } ?: continue
+                        if (!seen.add(parsedEpId)) continue
+                        out.add(
+                            BangumiEpisode(
+                                epId = parsedEpId,
+                                aid = ep.optLong("aid").takeIf { it > 0 } ?: ep.optLong("avid").takeIf { it > 0 },
+                                cid = ep.optLong("cid").takeIf { it > 0 },
+                                bvid = ep.optString("bvid").takeIf { it.isNotBlank() },
+                                title = ep.optString("title", ""),
+                                longTitle = ep.optString("long_title", ""),
+                                coverUrl = ep.optString("cover").takeIf { it.isNotBlank() },
+                                badge = ep.optString("badge").takeIf { it.isNotBlank() },
+                            ),
+                        )
+                    }
+                }
+
+                appendEpisodes(episodes)
+                for (i in 0 until sections.length()) {
+                    val section = sections.optJSONObject(i) ?: continue
+                    val sectionEpisodes = section.optJSONArray("episodes") ?: continue
+                    appendEpisodes(sectionEpisodes)
                 }
                 out
             }
@@ -751,14 +784,15 @@ object BiliApi {
         val rawResultLastEpId = result.optLong("last_ep_id", -1L).takeIf { it > 0 }
         AppLog.i(
             TAG,
-            "CONTINUE_DEBUG seasonDetail seasonId=$seasonId sess=${BiliClient.cookies.hasSessData()} " +
+            "CONTINUE_DEBUG seasonDetail seasonId=${seasonId ?: -1L} epId=${epId ?: -1L} sess=${BiliClient.cookies.hasSessData()} " +
                 "user_progress.last_ep_id=${rawUserLastEpId ?: -1L} user_progress.last_epid=${rawUserLastEpid ?: -1L} " +
                 "user_progress.last_ep_index=${rawUserLastEpIndex ?: -1} user_progress.last_time=${rawUserLastTime ?: -1L} " +
                 "result.progress.last_ep_id=${rawProgressLastEpId ?: -1L} result.last_ep_id=${rawResultLastEpId ?: -1L} " +
                 "parsed=$progressLastEpId episodes=${epList.size}",
         )
+        val resolvedSeasonId = result.optLong("season_id").takeIf { it > 0 } ?: seasonId ?: 0L
         return BangumiSeasonDetail(
-            seasonId = result.optLong("season_id").takeIf { it > 0 } ?: seasonId,
+            seasonId = resolvedSeasonId,
             title = result.optString("title", result.optString("season_title", "")),
             coverUrl = result.optString("cover").takeIf { it.isNotBlank() },
             subtitle = result.optString("subtitle").takeIf { it.isNotBlank() },

@@ -10,6 +10,8 @@ import blbl.cat3399.core.model.BangumiEpisode
 import blbl.cat3399.core.util.pgcAccessBadgeTextOf
 import blbl.cat3399.databinding.ItemBangumiEpisodeBinding
 
+private val EP_INDEX_ONLY_REGEX = Regex("^\\d+(?:\\.\\d+)?$")
+
 class BangumiEpisodeAdapter(
     private val onClick: (BangumiEpisode, Int) -> Unit,
 ) : RecyclerView.Adapter<BangumiEpisodeAdapter.Vh>() {
@@ -40,8 +42,13 @@ class BangumiEpisodeAdapter(
 
     class Vh(private val binding: ItemBangumiEpisodeBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(item: BangumiEpisode, onClick: (BangumiEpisode, Int) -> Unit) {
-            val title = item.title.trim().takeIf { it.isNotBlank() } ?: "-"
-            binding.tvTitle.text = "第${title}话"
+            val rawTitle = item.title.trim().takeIf { it.isNotBlank() } ?: "-"
+            binding.tvTitle.text =
+                if (EP_INDEX_ONLY_REGEX.matches(rawTitle)) {
+                    "第${rawTitle}话"
+                } else {
+                    rawTitle
+                }
             ImageLoader.loadInto(binding.ivCover, ImageUrl.cover(item.coverUrl))
 
             val badgeText = pgcAccessBadgeTextOf(item.badge)
