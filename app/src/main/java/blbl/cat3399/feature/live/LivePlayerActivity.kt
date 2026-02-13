@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.live
 
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.util.TypedValue
@@ -10,6 +11,7 @@ import android.view.ViewGroup.MarginLayoutParams
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -39,6 +41,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.math.roundToInt
 
 class LivePlayerActivity : BaseActivity() {
@@ -129,12 +132,17 @@ class LivePlayerActivity : BaseActivity() {
 
         binding.btnBack.setOnClickListener { finish() }
 
-        val exo = ExoPlayer.Builder(this).build()
+        val exo =
+            ExoPlayer.Builder(this)
+                .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
+                .build()
         player = exo
         binding.playerView.player = exo
         liveDanmakuBaseUptimeMs = SystemClock.elapsedRealtime()
         liveDanmakuLastAppendMs = Int.MIN_VALUE
         binding.danmakuView.setPositionProvider { liveDanmakuPositionMs() }
+        binding.danmakuView.setIsPlayingProvider { exo.isPlaying }
+        binding.danmakuView.setPlaybackSpeedProvider { exo.playbackParameters.speed }
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
 
         exo.addListener(
@@ -792,6 +800,7 @@ class LivePlayerActivity : BaseActivity() {
     private fun updateDebugOverlay() {
         val enabled = session.debugEnabled
         binding.tvDebug.visibility = if (enabled) View.VISIBLE else View.GONE
+        binding.danmakuView.setDebugEnabled(enabled)
         debugJob?.cancel()
         if (!enabled) return
         val exo = player ?: return
@@ -805,10 +814,44 @@ class LivePlayerActivity : BaseActivity() {
                             append(" qn=").append(play?.currentQn ?: 0)
                             append(" line=").append(session.lineOrder)
                             append(" pos=").append(exo.currentPosition).append("ms")
+                            buildDebugDisplayText()?.let { disp ->
+                                append('\n')
+                                append("disp=").append(disp)
+                            }
+                            runCatching { binding.danmakuView.getDebugStats() }.getOrNull()?.let { dm ->
+                                append('\n')
+                                append("dm=").append(if (dm.configEnabled) "on" else "off")
+                                append(" fps=").append(String.format(Locale.US, "%.1f", dm.drawFps))
+                                append(" act=").append(dm.lastFrameActive)
+                                append(" pend=").append(dm.lastFramePending)
+                                append(" hit=").append(dm.lastFrameCachedDrawn).append('/').append(dm.lastFrameActive)
+                                append(" fb=").append(dm.lastFrameFallbackDrawn)
+                                append(" q=").append(dm.queueDepth)
+                                if (dm.invalidateFull) {
+                                    append(" inv=full")
+                                } else {
+                                    append(" inv=").append(dm.invalidateTopPx).append('-').append(dm.invalidateBottomPx)
+                                }
+                            }
                         }
                     delay(500)
                 }
             }
+    }
+
+    private fun buildDebugDisplayText(): String? {
+        val display = binding.root.display ?: return null
+        val hz = display.refreshRate.takeIf { it > 0f }
+        if (Build.VERSION.SDK_INT < 23) {
+            return hz?.let { String.format(Locale.US, "%.0fHz", it) } ?: "-"
+        }
+        val mode = display.mode
+        val w = mode.physicalWidth.takeIf { it > 0 } ?: 0
+        val h = mode.physicalHeight.takeIf { it > 0 } ?: 0
+        val mhz = mode.refreshRate.takeIf { it > 0f } ?: hz
+        val hzText = mhz?.let { String.format(Locale.US, "%.0fHz", it) } ?: "-"
+        if (w <= 0 || h <= 0) return hzText
+        return "${w}x${h}@${hzText}"
     }
 
     private fun liveQnLabel(qn: Int, play: BiliApi.LivePlayUrl?): String {

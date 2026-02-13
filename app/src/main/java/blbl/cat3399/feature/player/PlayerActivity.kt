@@ -632,11 +632,16 @@ class PlayerActivity : BaseActivity() {
             debugEnabled = prefs.playerDebugEnabled,
         )
 
-        val exo = ExoPlayer.Builder(this).build()
+        val exo =
+            ExoPlayer.Builder(this)
+                .setVideoChangeFrameRateStrategy(C.VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF)
+                .build()
         player = exo
         binding.playerView.player = exo
         trace?.log("exo:created")
         binding.danmakuView.setPositionProvider { exo.currentPosition }
+        binding.danmakuView.setIsPlayingProvider { exo.isPlaying }
+        binding.danmakuView.setPlaybackSpeedProvider { exo.playbackParameters.speed }
         binding.danmakuView.setConfigProvider { session.danmaku.toConfig() }
         configureSubtitleView()
         exo.setPlaybackSpeed(session.playbackSpeed)

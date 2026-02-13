@@ -19,6 +19,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Danmaku
 import blbl.cat3399.core.net.BiliClient
 import java.util.IdentityHashMap
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
@@ -29,6 +30,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -47,6 +49,15 @@ class DanmakuView @JvmOverloads constructor(
     private val bitmapPool = BitmapPool(maxBytes = defaultBitmapPoolMaxBytes())
     private val debugStats = DebugStatsCollector()
     @Volatile private var debugEnabled: Boolean = false
+    private val paceLogger = PaceLogger()
+
+    // Tick pacing metrics (only used when debug is enabled; aggregated in logcat).
+    private val tickPaceRequested = AtomicLong(0L)
+    private val tickPaceExecuted = AtomicLong(0L)
+    private val tickPaceCoalesced = AtomicLong(0L)
+    private val tickPaceDelayCount = AtomicLong(0L)
+    private val tickPaceDelayTotalMs = AtomicLong(0L)
+    private val tickPaceDelayMaxMs = AtomicLong(0L)
 
     private class CachedBitmap(
         val bitmap: Bitmap,
@@ -63,7 +74,8 @@ class DanmakuView @JvmOverloads constructor(
     private var bitmapCache = IdentityHashMap<Danmaku, CachedBitmap>()
     private val rendering = IdentityHashMap<Danmaku, Boolean>()
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        isFilterBitmap = true
+        // Disable bitmap filtering to reduce shimmer during horizontal motion on some displays.
+        isFilterBitmap = false
     }
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -85,8 +97,11 @@ class DanmakuView @JvmOverloads constructor(
     private var bitmapRenderGeneration: Int = 0
 
     private var positionProvider: (() -> Long)? = null
+    private var isPlayingProvider: (() -> Boolean)? = null
+    private var playbackSpeedProvider: (() -> Float)? = null
     private var configProvider: (() -> DanmakuConfig)? = null
     private var lastPositionMs: Long = 0L
+    private val smoothClock = SmoothClock()
     private var lastDrawUptimeMs: Long = 0L
     private var lastPositionChangeUptimeMs: Long = 0L
     private var lastLayoutConfig: DanmakuConfig? = null
@@ -95,6 +110,11 @@ class DanmakuView @JvmOverloads constructor(
     private var cachedTopInsetPx: Int = dp(2f)
     private var cachedBottomInsetPx: Int = dp(52f)
     private var insetsDirty: Boolean = true
+    private var lastAreaInvalidateTopPx: Int = 0
+    private var lastAreaInvalidateBottomPx: Int = 0
+    private var lastInvalidateTopPx: Int = 0
+    private var lastInvalidateBottomPx: Int = 0
+    private var lastInvalidateFull: Boolean = true
 
     private data class RenderSnapshot(
         val positionMs: Long,
@@ -131,6 +151,7 @@ class DanmakuView @JvmOverloads constructor(
         val width: Int,
         val height: Int,
         val positionMs: Long,
+        val requestedAtUptimeMs: Long,
         val textSizePx: Float,
         val outlinePad: Float,
         val speedLevel: Int,
@@ -138,6 +159,82 @@ class DanmakuView @JvmOverloads constructor(
         val topInsetPx: Int,
         val bottomInsetPx: Int,
     )
+
+    private class SmoothClock {
+        // A smooth playback clock to reduce visible jitter caused by stepwise position updates.
+        // - Prevents large lead over raw time to avoid "danmaku too early".
+        // - On each frame: advance by dt * speed when playing, then gently correct towards raw position.
+        // - Snaps to raw on pauses/seeks/large drift to keep sync.
+        private var lastUptimeMs: Long = 0L
+        private var smoothPositionMs: Double = 0.0
+
+        fun reset(positionMs: Long, nowUptimeMs: Long) {
+            lastUptimeMs = nowUptimeMs
+            smoothPositionMs = positionMs.coerceAtLeast(0L).toDouble()
+        }
+
+        fun currentPositionMs(): Long = smoothPositionMs.toLong()
+
+        fun update(
+            nowUptimeMs: Long,
+            rawPositionMs: Long,
+            isPlaying: Boolean,
+            playbackSpeed: Float,
+        ): Long {
+            val raw = rawPositionMs.coerceAtLeast(0L).toDouble()
+            val last = lastUptimeMs
+            if (last == 0L) {
+                lastUptimeMs = nowUptimeMs
+                smoothPositionMs = raw
+                return rawPositionMs
+            }
+
+            val dtMs = (nowUptimeMs - last).coerceAtLeast(0L)
+            lastUptimeMs = nowUptimeMs
+            if (!isPlaying) {
+                // When paused/buffering, follow the raw clock to avoid drift (raw typically stops too).
+                smoothPositionMs = raw
+                return rawPositionMs
+            }
+
+            val speed =
+                playbackSpeed
+                    .takeIf { it.isFinite() && it > 0f }
+                    ?.toDouble()
+                    ?: 1.0
+            if (dtMs > 0L) {
+                smoothPositionMs += dtMs.toDouble() * speed
+            }
+
+            // If we drift too far behind, snap forward (seek/discontinuity/jank). We do NOT snap backwards:
+            // if we lead raw time, clamp and/or pause advances until raw catches up.
+            val diff = raw - smoothPositionMs
+            if (diff >= HARD_SYNC_THRESHOLD_MS) {
+                smoothPositionMs = raw
+                return rawPositionMs
+            }
+
+            val maxAllowed = raw + MAX_LEAD_MS
+            if (smoothPositionMs > maxAllowed) {
+                smoothPositionMs = maxAllowed
+                return smoothPositionMs.toLong()
+            }
+
+            // Soft catch-up when behind (bounded).
+            if (diff > 0.0) {
+                smoothPositionMs += diff * CORRECTION_GAIN
+                if (smoothPositionMs > maxAllowed) smoothPositionMs = maxAllowed
+            }
+            if (smoothPositionMs < 0.0) smoothPositionMs = 0.0
+            return smoothPositionMs.toLong()
+        }
+
+        private companion object {
+            private const val HARD_SYNC_THRESHOLD_MS = 250.0
+            private const val MAX_LEAD_MS = 48.0
+            private const val CORRECTION_GAIN = 0.12
+        }
+    }
 
     data class DebugStats(
         val viewAttached: Boolean,
@@ -160,6 +257,9 @@ class DanmakuView @JvmOverloads constructor(
         val bitmapReused: Long,
         val bitmapPutToPool: Long,
         val bitmapRecycled: Long,
+        val invalidateFull: Boolean,
+        val invalidateTopPx: Int,
+        val invalidateBottomPx: Int,
         val updateAvgMs: Float,
         val updateMaxMs: Float,
         val drawAvgMs: Float,
@@ -170,6 +270,13 @@ class DanmakuView @JvmOverloads constructor(
         if (debugEnabled == enabled) return
         debugEnabled = enabled
         debugStats.reset()
+        paceLogger.reset()
+        tickPaceRequested.set(0L)
+        tickPaceExecuted.set(0L)
+        tickPaceCoalesced.set(0L)
+        tickPaceDelayCount.set(0L)
+        tickPaceDelayTotalMs.set(0L)
+        tickPaceDelayMaxMs.set(0L)
     }
 
     fun getDebugStats(): DebugStats {
@@ -197,6 +304,9 @@ class DanmakuView @JvmOverloads constructor(
             bitmapReused = debugStats.bitmapReused.get(),
             bitmapPutToPool = debugStats.bitmapPutToPool.get(),
             bitmapRecycled = debugStats.bitmapRecycled.get(),
+            invalidateFull = lastInvalidateFull,
+            invalidateTopPx = lastInvalidateTopPx,
+            invalidateBottomPx = lastInvalidateBottomPx,
             updateAvgMs = debugStats.avgUpdateMs(),
             updateMaxMs = debugStats.maxUpdateMs(),
             drawAvgMs = debugStats.avgDrawMs(),
@@ -206,6 +316,14 @@ class DanmakuView @JvmOverloads constructor(
 
     fun setPositionProvider(provider: () -> Long) {
         positionProvider = provider
+    }
+
+    fun setIsPlayingProvider(provider: () -> Boolean) {
+        isPlayingProvider = provider
+    }
+
+    fun setPlaybackSpeedProvider(provider: () -> Float) {
+        playbackSpeedProvider = provider
     }
 
     fun setConfigProvider(provider: () -> DanmakuConfig) {
@@ -226,19 +344,24 @@ class DanmakuView @JvmOverloads constructor(
 
     private fun requestEngineTick(params: TickParams) {
         if (!isAttachedToWindow) return
+        if (debugEnabled) tickPaceRequested.incrementAndGet()
         latestTick.set(params)
         val handler = ensureEngineHandler()
         scheduleTickIfNeeded(handler)
     }
 
     private fun scheduleTickIfNeeded(handler: Handler) {
-        if (!tickPending.compareAndSet(false, true)) return
+        if (!tickPending.compareAndSet(false, true)) {
+            if (debugEnabled) tickPaceCoalesced.incrementAndGet()
+            return
+        }
         handler.post { runTickOnce(handler) }
     }
 
     private fun runTickOnce(handler: Handler) {
         try {
             val params = latestTick.getAndSet(null) ?: return
+            recordTickPace(params)
             engineWorker.tick(params)
         } catch (t: Throwable) {
             AppLog.w("DanmakuView", "engine tick crashed", t)
@@ -294,6 +417,7 @@ class DanmakuView @JvmOverloads constructor(
         postToEngine { engineWorker.seekTo(positionMs) }
         lastPositionMs = positionMs
         lastDrawUptimeMs = SystemClock.uptimeMillis()
+        smoothClock.reset(positionMs = positionMs, nowUptimeMs = lastDrawUptimeMs)
         lastPositionChangeUptimeMs = lastDrawUptimeMs
         clearBitmaps()
         invalidate()
@@ -308,20 +432,38 @@ class DanmakuView @JvmOverloads constructor(
             lastLayoutConfig = null
             renderSnapshot = RenderSnapshot.EMPTY
             warmupFrames = 0
+            paceLogger.reset()
+            smoothClock.reset(positionMs = 0L, nowUptimeMs = 0L)
             return
         }
 
-        val prevPositionMs = lastPositionMs
-        val positionMs = provider()
+        val prevRawPositionMs = lastPositionMs
+        val rawPositionMs = provider()
         val now = SystemClock.uptimeMillis()
         if (lastDrawUptimeMs == 0L) lastDrawUptimeMs = now
         if (lastPositionChangeUptimeMs == 0L) lastPositionChangeUptimeMs = now
 
-        if (positionMs != prevPositionMs) {
+        if (rawPositionMs != prevRawPositionMs) {
             lastPositionChangeUptimeMs = now
         }
-        lastPositionMs = positionMs
+        lastPositionMs = rawPositionMs
         lastDrawUptimeMs = now
+
+        val isPlaying =
+            runCatching { isPlayingProvider?.invoke() }.getOrNull()
+                ?: (now - lastPositionChangeUptimeMs < STOP_WHEN_IDLE_MS)
+        val playbackSpeed =
+            runCatching { playbackSpeedProvider?.invoke() }.getOrNull()
+                ?.takeIf { it.isFinite() && it > 0f }
+                ?: 1f
+        val prevSmoothPositionMs = smoothClock.currentPositionMs()
+        val positionMs =
+            smoothClock.update(
+                nowUptimeMs = now,
+                rawPositionMs = rawPositionMs,
+                isPlaying = isPlaying,
+                playbackSpeed = playbackSpeed,
+            )
 
         when (decideLayoutReset(lastLayoutConfig, config)) {
             LayoutReset.NONE -> Unit
@@ -348,13 +490,30 @@ class DanmakuView @JvmOverloads constructor(
         bitmapPaint.alpha = opacityAlpha
         val topInsetPx = safeTopInsetPx()
         val bottomInsetPx = safeBottomInsetPx()
+        val invTop = topInsetPx.coerceIn(0, height.coerceAtLeast(0))
+        val availableHeight = (height - topInsetPx - bottomInsetPx).coerceAtLeast(0)
+        val invBottomRaw = topInsetPx + (availableHeight.toFloat() * config.area.coerceAtLeast(0f)).toInt()
+        val invBottom = invBottomRaw.coerceIn(invTop, height.coerceAtLeast(0))
+        lastAreaInvalidateTopPx = invTop
+        lastAreaInvalidateBottomPx = invBottom
 
         val snapshotBeforeDraw = renderSnapshot
+        if (debugEnabled) {
+            paceLogger.onFrame(
+                nowUptimeMs = now,
+                rawPositionMs = rawPositionMs,
+                prevRawPositionMs = prevRawPositionMs,
+                smoothPositionMs = positionMs,
+                prevSmoothPositionMs = prevSmoothPositionMs,
+                snapshotPositionMs = snapshotBeforeDraw.positionMs,
+            )
+        }
         requestEngineTick(
             TickParams(
                 width = width,
                 height = height,
                 positionMs = positionMs,
+                requestedAtUptimeMs = now,
                 textSizePx = textSizePx,
                 outlinePad = outlinePad,
                 speedLevel = config.speedLevel,
@@ -376,8 +535,8 @@ class DanmakuView @JvmOverloads constructor(
         val activeCount = snapshotBeforeDraw.activeCount
         for (i in 0 until activeCount) {
             val d = snapshotBeforeDraw.activeDanmakus.getOrNull(i) ?: continue
-            val x = snapshotBeforeDraw.activeX.getOrNull(i) ?: continue
-            val yTop = snapshotBeforeDraw.activeYTop.getOrNull(i) ?: continue
+            val x = (snapshotBeforeDraw.activeX.getOrNull(i) ?: continue).roundToInt().toFloat()
+            val yTop = (snapshotBeforeDraw.activeYTop.getOrNull(i) ?: continue).roundToInt().toFloat()
             val textWidth = snapshotBeforeDraw.activeTextWidth.getOrNull(i) ?: continue
             val cached = bitmapCache[d]
             if (cached != null) {
@@ -489,33 +648,101 @@ class DanmakuView @JvmOverloads constructor(
                 requestsActive = requested,
                 requestsPrefetch = requestedPrefetch,
             )
+            paceLogger.onDrawCost(drawNs = drawNs)
         }
 
         // If playback time hasn't moved for a while, stop the loop to avoid wasting 60fps while paused/buffering.
         // PlayerActivity kicks `invalidate()` on resume/play state changes.
         if (now - lastPositionChangeUptimeMs >= STOP_WHEN_IDLE_MS) {
-            postInvalidateDelayed(IDLE_POLL_MS)
+            postInvalidateDelayedDanmakuArea(delayMs = IDLE_POLL_MS.toLong())
+            if (debugEnabled) {
+                paceLogger.maybeLog(nowUptimeMs = now, rawPositionMs = rawPositionMs, smoothPositionMs = positionMs, snapshot = snapshotBeforeDraw)
+            }
             return
         }
 
         // Keep vsync loop while we have active danmaku; otherwise schedule lazily.
         if (activeCount > 0 || snapshotBeforeDraw.pendingCount > 0) {
-            postInvalidateOnAnimation()
+            postInvalidateOnAnimationDanmakuArea()
+            if (debugEnabled) {
+                paceLogger.maybeLog(nowUptimeMs = now, rawPositionMs = rawPositionMs, smoothPositionMs = positionMs, snapshot = snapshotBeforeDraw)
+            }
             return
         }
         val nextAt = snapshotBeforeDraw.nextAtMs
         if (nextAt != null && nextAt <= positionMs + 250) {
-            postInvalidateOnAnimation()
+            postInvalidateOnAnimationDanmakuArea()
+            if (debugEnabled) {
+                paceLogger.maybeLog(nowUptimeMs = now, rawPositionMs = rawPositionMs, smoothPositionMs = positionMs, snapshot = snapshotBeforeDraw)
+            }
             return
         }
         if (nextAt != null && nextAt > positionMs) {
             val delay = (nextAt - positionMs).coerceAtMost(750L)
-            postInvalidateDelayed(delay)
+            postInvalidateDelayedDanmakuArea(delayMs = delay)
+            if (debugEnabled) {
+                paceLogger.maybeLog(nowUptimeMs = now, rawPositionMs = rawPositionMs, smoothPositionMs = positionMs, snapshot = snapshotBeforeDraw)
+            }
             return
         }
         if (warmupFrames > 0) {
             warmupFrames--
+            postInvalidateOnAnimationDanmakuArea()
+        }
+        if (debugEnabled) {
+            paceLogger.maybeLog(nowUptimeMs = now, rawPositionMs = rawPositionMs, smoothPositionMs = positionMs, snapshot = snapshotBeforeDraw)
+        }
+    }
+
+    private fun postInvalidateOnAnimationDanmakuArea() {
+        val w = width.coerceAtLeast(0)
+        val h = height.coerceAtLeast(0)
+        if (w <= 0 || h <= 0) {
+            lastInvalidateFull = true
+            lastInvalidateTopPx = 0
+            lastInvalidateBottomPx = 0
             postInvalidateOnAnimation()
+            return
+        }
+
+        val top = lastAreaInvalidateTopPx.coerceIn(0, h)
+        var bottom = lastAreaInvalidateBottomPx.coerceIn(top, h)
+        if (bottom <= top) bottom = (top + 1).coerceAtMost(h)
+
+        val full = top <= 0 && bottom >= h
+        lastInvalidateFull = full
+        lastInvalidateTopPx = top
+        lastInvalidateBottomPx = bottom
+        if (full) {
+            postInvalidateOnAnimation()
+        } else {
+            postInvalidateOnAnimation(0, top, w, bottom)
+        }
+    }
+
+    private fun postInvalidateDelayedDanmakuArea(delayMs: Long) {
+        val w = width.coerceAtLeast(0)
+        val h = height.coerceAtLeast(0)
+        if (w <= 0 || h <= 0) {
+            lastInvalidateFull = true
+            lastInvalidateTopPx = 0
+            lastInvalidateBottomPx = 0
+            postInvalidateDelayed(delayMs)
+            return
+        }
+
+        val top = lastAreaInvalidateTopPx.coerceIn(0, h)
+        var bottom = lastAreaInvalidateBottomPx.coerceIn(top, h)
+        if (bottom <= top) bottom = (top + 1).coerceAtMost(h)
+
+        val full = top <= 0 && bottom >= h
+        lastInvalidateFull = full
+        lastInvalidateTopPx = top
+        lastInvalidateBottomPx = bottom
+        if (full) {
+            postInvalidateDelayed(delayMs)
+        } else {
+            postInvalidateDelayed(delayMs, 0, top, w, bottom)
         }
     }
 
@@ -569,8 +796,8 @@ class DanmakuView @JvmOverloads constructor(
         stroke.color = (strokeAlpha shl 24) or 0x000000
         fill.color = (opacityAlpha shl 24) or rgb
 
-        val textX = x + outlinePad
-        val baseline = yTop + baselineOffset
+        val textX = (x + outlinePad).roundToInt().toFloat()
+        val baseline = (yTop + baselineOffset).roundToInt().toFloat()
         canvas.drawText(danmaku.text, textX, baseline, stroke)
         canvas.drawText(danmaku.text, textX, baseline, fill)
     }
@@ -779,7 +1006,7 @@ class DanmakuView @JvmOverloads constructor(
 
         created.lastUseUptimeMs = SystemClock.uptimeMillis()
         bitmapCache[req.danmaku] = created
-        postInvalidateOnAnimation()
+        postInvalidateOnAnimationDanmakuArea()
     }
 
     private fun releaseBitmapAsync(bitmap: Bitmap) {
@@ -819,6 +1046,8 @@ class DanmakuView @JvmOverloads constructor(
 
     override fun onDetachedFromWindow() {
         stopEngineThread()
+        paceLogger.reset()
+        smoothClock.reset(positionMs = 0L, nowUptimeMs = 0L)
         clearBitmaps(recycleMode = BitmapRecycleMode.ASYNC)
         recycleScope.launch { bitmapPool.clear() }
         if (viewTreeObserver.isAlive) {
@@ -865,6 +1094,320 @@ class DanmakuView @JvmOverloads constructor(
         private const val MAX_EVICT_PER_FRAME = 12
 
         private val recycleScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    }
+
+    private fun recordTickPace(params: TickParams) {
+        if (!debugEnabled) return
+        val now = SystemClock.uptimeMillis()
+        val delay = (now - params.requestedAtUptimeMs).coerceAtLeast(0L)
+        tickPaceExecuted.incrementAndGet()
+        tickPaceDelayCount.incrementAndGet()
+        tickPaceDelayTotalMs.addAndGet(delay)
+        updateMax(tickPaceDelayMaxMs, delay)
+    }
+
+    private fun updateMax(target: AtomicLong, value: Long) {
+        while (true) {
+            val cur = target.get()
+            if (value <= cur) return
+            if (target.compareAndSet(cur, value)) return
+        }
+    }
+
+    private inner class PaceLogger {
+        private var windowStartUptimeMs: Long = 0L
+        private var lastLogUptimeMs: Long = 0L
+        private var lastDrawUptimeMs: Long = 0L
+
+        private var frameCount: Long = 0L
+
+        private var drawIntervalCount: Long = 0L
+        private var drawIntervalSumMs: Long = 0L
+        private var drawIntervalMinMs: Long = Long.MAX_VALUE
+        private var drawIntervalMaxMs: Long = 0L
+
+        private var rawDeltaCount: Long = 0L
+        private var rawDeltaSumAbsMs: Long = 0L
+        private var rawDeltaMaxAbsMs: Long = 0L
+        private var rawDeltaZeroCount: Long = 0L
+        private var rawDeltaBackCount: Long = 0L
+        private var rawDeltaJumpCount: Long = 0L
+        private var rawDeltaJumpMaxAbsMs: Long = 0L
+
+        private var smoothDeltaCount: Long = 0L
+        private var smoothDeltaSumAbsMs: Long = 0L
+        private var smoothDeltaMaxAbsMs: Long = 0L
+        private var smoothDeltaZeroCount: Long = 0L
+
+        private var driftCount: Long = 0L
+        private var driftSumAbsMs: Long = 0L
+        private var driftMaxAbsMs: Long = 0L
+
+        private var snapAgeCount: Long = 0L
+        private var snapAgeSumMs: Long = 0L
+        private var snapAgeMaxMs: Long = 0L
+        private var snapAgeNegCount: Long = 0L
+        private var snapSameCount: Long = 0L
+        private var lastSnapPosMs: Long? = null
+
+        private var drawCostCount: Long = 0L
+        private var drawCostSumNs: Long = 0L
+        private var drawCostMaxNs: Long = 0L
+
+        fun reset() {
+            windowStartUptimeMs = 0L
+            lastLogUptimeMs = 0L
+            lastDrawUptimeMs = 0L
+
+            frameCount = 0L
+
+            drawIntervalCount = 0L
+            drawIntervalSumMs = 0L
+            drawIntervalMinMs = Long.MAX_VALUE
+            drawIntervalMaxMs = 0L
+
+            rawDeltaCount = 0L
+            rawDeltaSumAbsMs = 0L
+            rawDeltaMaxAbsMs = 0L
+            rawDeltaZeroCount = 0L
+            rawDeltaBackCount = 0L
+            rawDeltaJumpCount = 0L
+            rawDeltaJumpMaxAbsMs = 0L
+
+            smoothDeltaCount = 0L
+            smoothDeltaSumAbsMs = 0L
+            smoothDeltaMaxAbsMs = 0L
+            smoothDeltaZeroCount = 0L
+
+            driftCount = 0L
+            driftSumAbsMs = 0L
+            driftMaxAbsMs = 0L
+
+            snapAgeCount = 0L
+            snapAgeSumMs = 0L
+            snapAgeMaxMs = 0L
+            snapAgeNegCount = 0L
+            snapSameCount = 0L
+            lastSnapPosMs = null
+
+            drawCostCount = 0L
+            drawCostSumNs = 0L
+            drawCostMaxNs = 0L
+        }
+
+        fun onFrame(
+            nowUptimeMs: Long,
+            rawPositionMs: Long,
+            prevRawPositionMs: Long,
+            smoothPositionMs: Long,
+            prevSmoothPositionMs: Long,
+            snapshotPositionMs: Long,
+        ) {
+            if (windowStartUptimeMs == 0L) windowStartUptimeMs = nowUptimeMs
+            frameCount++
+
+            if (lastDrawUptimeMs != 0L) {
+                val dt = (nowUptimeMs - lastDrawUptimeMs).coerceAtLeast(0L)
+                drawIntervalCount++
+                drawIntervalSumMs += dt
+                if (dt < drawIntervalMinMs) drawIntervalMinMs = dt
+                if (dt > drawIntervalMaxMs) drawIntervalMaxMs = dt
+            }
+            lastDrawUptimeMs = nowUptimeMs
+
+            if (prevRawPositionMs != 0L) {
+                val d = rawPositionMs - prevRawPositionMs
+                val absD = abs(d)
+                // Typical playback deltas are within ~0..40ms; use a generous threshold to exclude seeks.
+                if (absD <= 250L) {
+                    rawDeltaCount++
+                    rawDeltaSumAbsMs += absD
+                    if (absD > rawDeltaMaxAbsMs) rawDeltaMaxAbsMs = absD
+                    if (d == 0L) rawDeltaZeroCount++
+                    if (d < 0L) rawDeltaBackCount++
+                } else {
+                    rawDeltaJumpCount++
+                    if (absD > rawDeltaJumpMaxAbsMs) rawDeltaJumpMaxAbsMs = absD
+                }
+            }
+
+            if (snapshotPositionMs != 0L) {
+                val age = smoothPositionMs - snapshotPositionMs
+                if (age < 0L) {
+                    snapAgeNegCount++
+                } else if (age <= 2_500L) {
+                    snapAgeCount++
+                    snapAgeSumMs += age
+                    if (age > snapAgeMaxMs) snapAgeMaxMs = age
+                }
+
+                val last = lastSnapPosMs
+                if (last != null && last == snapshotPositionMs) {
+                    snapSameCount++
+                }
+                lastSnapPosMs = snapshotPositionMs
+            }
+
+            if (prevSmoothPositionMs != 0L) {
+                val d = smoothPositionMs - prevSmoothPositionMs
+                val absD = abs(d)
+                if (absD <= 250L) {
+                    smoothDeltaCount++
+                    smoothDeltaSumAbsMs += absD
+                    if (absD > smoothDeltaMaxAbsMs) smoothDeltaMaxAbsMs = absD
+                    if (d == 0L) smoothDeltaZeroCount++
+                }
+            }
+
+            val drift = smoothPositionMs - rawPositionMs
+            val absDrift = abs(drift)
+            if (absDrift <= 2_500L) {
+                driftCount++
+                driftSumAbsMs += absDrift
+                if (absDrift > driftMaxAbsMs) driftMaxAbsMs = absDrift
+            }
+        }
+
+        fun onDrawCost(drawNs: Long) {
+            // Ignore huge outliers from app backgrounding or debugger pauses.
+            if (drawNs < 0L || drawNs > 500_000_000L) return
+            drawCostCount++
+            drawCostSumNs += drawNs
+            if (drawNs > drawCostMaxNs) drawCostMaxNs = drawNs
+        }
+
+        fun maybeLog(nowUptimeMs: Long, rawPositionMs: Long, smoothPositionMs: Long, snapshot: RenderSnapshot) {
+            val last = lastLogUptimeMs
+            if (last != 0L && nowUptimeMs - last < 1_000L) return
+            if (windowStartUptimeMs == 0L) return
+
+            val spanMs = nowUptimeMs - windowStartUptimeMs
+            if (spanMs < 900L) return
+            lastLogUptimeMs = nowUptimeMs
+
+            val dtAvg = if (drawIntervalCount > 0L) drawIntervalSumMs.toDouble() / drawIntervalCount.toDouble() else 0.0
+            val dtMin = if (drawIntervalMinMs == Long.MAX_VALUE) 0L else drawIntervalMinMs
+
+            val rawAvgAbs = if (rawDeltaCount > 0L) rawDeltaSumAbsMs.toDouble() / rawDeltaCount.toDouble() else 0.0
+            val rawZeroPct = if (rawDeltaCount > 0L) (rawDeltaZeroCount.toDouble() * 100.0 / rawDeltaCount.toDouble()) else 0.0
+            val smoothAvgAbs = if (smoothDeltaCount > 0L) smoothDeltaSumAbsMs.toDouble() / smoothDeltaCount.toDouble() else 0.0
+            val smoothZeroPct =
+                if (smoothDeltaCount > 0L) (smoothDeltaZeroCount.toDouble() * 100.0 / smoothDeltaCount.toDouble()) else 0.0
+            val driftAvgAbs = if (driftCount > 0L) driftSumAbsMs.toDouble() / driftCount.toDouble() else 0.0
+            val snapAgeAvg = if (snapAgeCount > 0L) snapAgeSumMs.toDouble() / snapAgeCount.toDouble() else 0.0
+            val snapSamePct = if (frameCount > 0L) (snapSameCount.toDouble() * 100.0 / frameCount.toDouble()) else 0.0
+            val drawCostAvgMs =
+                if (drawCostCount > 0L) {
+                    (drawCostSumNs.toDouble() / drawCostCount.toDouble()) / 1_000_000.0
+                } else {
+                    0.0
+                }
+            val drawCostMaxMs = drawCostMaxNs.toDouble() / 1_000_000.0
+
+            val hz = display?.refreshRate?.takeIf { it > 0f }
+            val hzText =
+                if (hz != null) {
+                    // Most devices report near-integers (e.g. 59.94); keep 1 decimal for visibility.
+                    String.format(Locale.US, "%.1f", hz)
+                } else {
+                    "-"
+                }
+
+            val tickReq = tickPaceRequested.getAndSet(0L)
+            val tickExec = tickPaceExecuted.getAndSet(0L)
+            val tickCoal = tickPaceCoalesced.getAndSet(0L)
+            val tickDelayN = tickPaceDelayCount.getAndSet(0L)
+            val tickDelayTotal = tickPaceDelayTotalMs.getAndSet(0L)
+            val tickDelayMax = tickPaceDelayMaxMs.getAndSet(0L)
+            val tickDelayAvg = if (tickDelayN > 0L) (tickDelayTotal.toDouble() / tickDelayN.toDouble()) else 0.0
+
+            AppLog.d(
+                "DanmakuPace",
+                buildString {
+                    append("span=").append(spanMs).append("ms")
+                    append(" raw=").append(rawPositionMs).append("ms")
+                    append(" sm=").append(smoothPositionMs).append("ms")
+                    append(" diff=").append(smoothPositionMs - rawPositionMs).append("ms")
+                    append(" act=").append(snapshot.activeCount)
+                    append(" pend=").append(snapshot.pendingCount)
+                    append(" q=").append(debugStats.queueDepth())
+                    append(" hz=").append(hzText)
+                    append(" inv=")
+                    if (lastInvalidateFull) {
+                        append("full")
+                    } else {
+                        append(lastInvalidateTopPx).append('-').append(lastInvalidateBottomPx)
+                    }
+                    append(" area=").append(lastAreaInvalidateTopPx).append('-').append(lastAreaInvalidateBottomPx)
+                    append(" | drawΔ=")
+                    append(String.format(Locale.US, "%.1f", dtAvg))
+                    append("ms(").append(dtMin).append('-').append(drawIntervalMaxMs).append(')')
+                    append(" cost=")
+                    append(String.format(Locale.US, "%.2f", drawCostAvgMs))
+                    append("ms max=").append(String.format(Locale.US, "%.0f", drawCostMaxMs))
+                    append(" rawΔ=")
+                    append(String.format(Locale.US, "%.1f", rawAvgAbs))
+                    append("ms max=").append(rawDeltaMaxAbsMs)
+                    append(" z=").append(String.format(Locale.US, "%.0f", rawZeroPct)).append('%')
+                    if (rawDeltaBackCount > 0L) append(" back=").append(rawDeltaBackCount)
+                    if (rawDeltaJumpCount > 0L) append(" jump=").append(rawDeltaJumpCount).append(" max=").append(rawDeltaJumpMaxAbsMs)
+                    append(" smΔ=")
+                    append(String.format(Locale.US, "%.1f", smoothAvgAbs))
+                    append("ms max=").append(smoothDeltaMaxAbsMs)
+                    if (smoothDeltaCount > 0L) {
+                        append(" z=").append(String.format(Locale.US, "%.0f", smoothZeroPct)).append('%')
+                    }
+                    append(" drift=")
+                    append(String.format(Locale.US, "%.1f", driftAvgAbs))
+                    append("ms max=").append(driftMaxAbsMs)
+                    append(" snapAge=")
+                    append(String.format(Locale.US, "%.1f", snapAgeAvg))
+                    append("ms max=").append(snapAgeMaxMs)
+                    if (snapAgeNegCount > 0L) append(" neg=").append(snapAgeNegCount)
+                    append(" same=").append(String.format(Locale.US, "%.0f", snapSamePct)).append('%')
+                    append(" tick r/e/c=").append(tickReq).append('/').append(tickExec).append('/').append(tickCoal)
+                    append(" dly=")
+                    append(String.format(Locale.US, "%.1f", tickDelayAvg))
+                    append("ms max=").append(tickDelayMax)
+                },
+            )
+
+            // Reset window counters but keep lastDrawUptimeMs and lastSnapPosMs for continuity.
+            windowStartUptimeMs = nowUptimeMs
+            frameCount = 0L
+
+            drawIntervalCount = 0L
+            drawIntervalSumMs = 0L
+            drawIntervalMinMs = Long.MAX_VALUE
+            drawIntervalMaxMs = 0L
+
+            rawDeltaCount = 0L
+            rawDeltaSumAbsMs = 0L
+            rawDeltaMaxAbsMs = 0L
+            rawDeltaZeroCount = 0L
+            rawDeltaBackCount = 0L
+            rawDeltaJumpCount = 0L
+            rawDeltaJumpMaxAbsMs = 0L
+
+            smoothDeltaCount = 0L
+            smoothDeltaSumAbsMs = 0L
+            smoothDeltaMaxAbsMs = 0L
+            smoothDeltaZeroCount = 0L
+
+            driftCount = 0L
+            driftSumAbsMs = 0L
+            driftMaxAbsMs = 0L
+
+            snapAgeCount = 0L
+            snapAgeSumMs = 0L
+            snapAgeMaxMs = 0L
+            snapAgeNegCount = 0L
+            snapSameCount = 0L
+
+            drawCostCount = 0L
+            drawCostSumNs = 0L
+            drawCostMaxNs = 0L
+        }
     }
 
     private inner class EngineWorker {

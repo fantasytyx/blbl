@@ -1,5 +1,6 @@
 package blbl.cat3399.feature.player
 
+import android.os.Build
 import android.os.SystemClock
 import android.view.View
 import androidx.lifecycle.lifecycleScope
@@ -111,6 +112,11 @@ private fun PlayerActivity.buildDebugText(exo: ExoPlayer): String {
         sb.append('\n')
     }
 
+    buildDebugDisplayText()?.let { disp ->
+        sb.append("disp=").append(disp)
+        sb.append('\n')
+    }
+
     sb.append("decoder=").append(shortenDebugValue(debug.videoDecoderName ?: "-", maxChars = 64))
     sb.append('\n')
 
@@ -126,6 +132,11 @@ private fun PlayerActivity.buildDebugText(exo: ExoPlayer): String {
         sb.append(" hit=").append(dm.lastFrameCachedDrawn).append('/').append(dm.lastFrameActive)
         sb.append(" fb=").append(dm.lastFrameFallbackDrawn)
         sb.append(" q=").append(dm.queueDepth)
+        if (dm.invalidateFull) {
+            sb.append(" inv=full")
+        } else {
+            sb.append(" inv=").append(dm.invalidateTopPx).append('-').append(dm.invalidateBottomPx)
+        }
         sb.append('\n')
 
         val poolMb = dm.poolBytes.toDouble() / (1024.0 * 1024.0)
@@ -155,6 +166,21 @@ private fun PlayerActivity.buildDebugText(exo: ExoPlayer): String {
         sb.append(" req=").append(dm.lastFrameRequestsActive).append('+').append(dm.lastFrameRequestsPrefetch)
     }
     return sb.toString()
+}
+
+private fun PlayerActivity.buildDebugDisplayText(): String? {
+    val display = binding.root.display ?: return null
+    val hz = display.refreshRate.takeIf { it > 0f }
+    if (Build.VERSION.SDK_INT < 23) {
+        return hz?.let { String.format(Locale.US, "%.0fHz", it) } ?: "-"
+    }
+    val mode = display.mode
+    val w = mode.physicalWidth.takeIf { it > 0 } ?: 0
+    val h = mode.physicalHeight.takeIf { it > 0 } ?: 0
+    val mhz = mode.refreshRate.takeIf { it > 0f } ?: hz
+    val hzText = mhz?.let { String.format(Locale.US, "%.0fHz", it) } ?: "-"
+    if (w <= 0 || h <= 0) return hzText
+    return "${w}x${h}@${hzText}"
 }
 
 private fun PlayerActivity.updateDebugVideoStatsFromCounters(exo: ExoPlayer) {
