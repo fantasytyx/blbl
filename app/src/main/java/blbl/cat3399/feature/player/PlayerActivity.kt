@@ -2662,7 +2662,7 @@ class PlayerActivity : BaseActivity() {
         internal const val HOLD_SCRUB_TRAVERSE_MS = 10_000L
         internal const val HOLD_SCRUB_SHORT_VIDEO_THRESHOLD_MS = 40_000L
         internal const val HOLD_SCRUB_SHORT_SPEED_MS_PER_S = 4_000L
-        private const val BACK_DOUBLE_PRESS_WINDOW_MS = 1_500L
+        private const val BACK_DOUBLE_PRESS_WINDOW_MS = 2_500L
         internal const val SEEK_HINT_HIDE_DELAY_MS = 900L
         internal const val SEEK_OSD_HIDE_DELAY_MS = 1_500L
         internal const val AUTO_SKIP_START_WINDOW_MS = 1_000L

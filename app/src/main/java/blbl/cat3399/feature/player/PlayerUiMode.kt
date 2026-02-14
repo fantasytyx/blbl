@@ -79,7 +79,7 @@ object PlayerOsdSizing {
             btn.setPadding(padTransport, padTransport, padTransport, padTransport)
             setEndMargin(btn, gap)
         }
-        listOf(binding.btnSubtitle, binding.btnDanmaku, binding.btnUp).forEach { btn ->
+        listOf(binding.btnSubtitle, binding.btnDanmaku, binding.btnComments, binding.btnUp).forEach { btn ->
             setSize(btn, targetSize, targetSize)
             btn.setPadding(padNormal, padNormal, padNormal, padNormal)
             setEndMargin(btn, gap)
