@@ -25,6 +25,8 @@ class SearchState {
 
     var refreshUiToken: Int = 0
 
+    private val tabHasMemory: BooleanArray = BooleanArray(SearchTab.entries.size)
+
     val loadedBvids: HashSet<String> = HashSet()
     val loadedBangumiSeasonIds: HashSet<Long> = HashSet()
     val loadedMediaSeasonIds: HashSet<Long> = HashSet()
@@ -48,6 +50,19 @@ class SearchState {
             SearchTab.User -> userPaging
         }
 
+    fun hasMemoryForTab(index: Int): Boolean {
+        return index in tabHasMemory.indices && tabHasMemory[index]
+    }
+
+    fun markMemoryForTab(index: Int) {
+        if (index !in tabHasMemory.indices) return
+        tabHasMemory[index] = true
+    }
+
+    fun clearAllTabMemories() {
+        tabHasMemory.fill(false)
+    }
+
     fun clearLoadedForTab(index: Int) {
         when (tabForIndex(index)) {
             SearchTab.Video -> loadedBvids.clear()
@@ -58,4 +73,3 @@ class SearchState {
         }
     }
 }
-

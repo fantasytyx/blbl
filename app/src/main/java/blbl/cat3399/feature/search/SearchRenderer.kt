@@ -582,6 +582,7 @@ class SearchRenderer(
                 }
 
                 override fun onTabReselected(tab: com.google.android.material.tabs.TabLayout.Tab) {
+                    interactor.onTabReselected(tab.position)
                     scheduleTabTextScaleFix()
                 }
             },

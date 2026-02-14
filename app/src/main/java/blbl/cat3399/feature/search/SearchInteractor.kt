@@ -120,11 +120,29 @@ class SearchInteractor(
 
         renderer.hideImeAndClearQueryFocusIfNeeded()
         renderer.showResults()
+
+        // New keyword: drop per-tab "memory" so switching tabs will refresh on-demand.
+        state.clearAllTabMemories()
+        for (i in SearchTab.entries.indices) {
+            state.clearLoadedForTab(i)
+            state.pagingForTab(i).reset()
+            renderer.clearResultsForTab(i)
+        }
+
         resetAndLoad()
         renderer.focusSelectedTabAfterShow()
     }
 
     fun onTabSelected(position: Int) {
+        state.currentTabIndex = position
+        if (!renderer.isResultsVisible()) return
+        renderer.switchTab(position)
+        if (!state.hasMemoryForTab(position)) {
+            resetAndLoad()
+        }
+    }
+
+    fun onTabReselected(position: Int) {
         state.currentTabIndex = position
         if (!renderer.isResultsVisible()) return
         renderer.switchTab(position)
@@ -411,6 +429,7 @@ class SearchInteractor(
 
         apply(items, applied.isRefresh)
         renderer.onResultsApplied()
+        state.markMemoryForTab(tabIndexAtStart)
     }
 
     private fun effectiveKeyword(): String {

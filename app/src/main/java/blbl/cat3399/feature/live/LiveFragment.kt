@@ -17,6 +17,8 @@ import blbl.cat3399.core.ui.enableDpadTabFocus
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentLiveBinding
 import blbl.cat3399.ui.BackPressHandler
+import blbl.cat3399.ui.RefreshKeyHandler
+import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import androidx.fragment.app.FragmentManager
 import kotlinx.coroutines.Job
@@ -33,6 +35,17 @@ class LiveFragment : Fragment(), LiveGridTabSwitchFocusHost, BackPressHandler, L
 
     private var loadAreasJob: Job? = null
     private var backStackListener: FragmentManager.OnBackStackChangedListener? = null
+
+    private val tabReselectRefreshListener: TabLayout.OnTabSelectedListener =
+        object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(tab: TabLayout.Tab) = Unit
+
+            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+
+            override fun onTabReselected(tab: TabLayout.Tab) {
+                refreshCurrentPageFromTabReselect()
+            }
+        }
 
     private var tabs: List<LiveTab> =
         buildList {
@@ -114,6 +127,12 @@ class LiveFragment : Fragment(), LiveGridTabSwitchFocusHost, BackPressHandler, L
         return byTag ?: childFragmentManager.fragments.firstOrNull { it.isVisible }
     }
 
+    private fun refreshCurrentPageFromTabReselect(): Boolean {
+        val page = currentPageFragment() ?: return false
+        val handler = page as? RefreshKeyHandler ?: return false
+        return handler.handleRefreshKey()
+    }
+
     private fun applyAreas(parents: List<LiveAreaParent>) {
         // Keep UI manageable: recommend + following + top parents.
         val picked =
@@ -143,6 +162,9 @@ class LiveFragment : Fragment(), LiveGridTabSwitchFocusHost, BackPressHandler, L
             TabLayoutMediator(b.tabLayout, b.viewPager) { tab, position ->
                 tab.text = list.getOrNull(position)?.title ?: ""
             }.also { it.attach() }
+
+        b.tabLayout.removeOnTabSelectedListener(tabReselectRefreshListener)
+        b.tabLayout.addOnTabSelectedListener(tabReselectRefreshListener)
 
         val tabLayout = b.tabLayout
         tabLayout.postIfAlive(isAlive = { _binding === b }) {

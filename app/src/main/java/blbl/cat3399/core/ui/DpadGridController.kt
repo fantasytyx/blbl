@@ -330,17 +330,37 @@ internal class DpadGridController(
     }
 
     private fun isInTopRowAtTop(position: Int): Boolean {
-        if (recyclerView.canScrollVertically(-1)) return false
-        val lm = recyclerView.layoutManager
+        // IMPORTANT: Don't rely solely on `RecyclerView.canScrollVertically(-1)` here.
+        // On TV, focused items often scale up slightly; RecyclerView may scroll by a few pixels
+        // to keep the scaled item fully visible, making `canScrollVertically(-1)` return true
+        // even when the user is effectively on the first row. That causes DPAD_UP to escape to
+        // other containers (e.g. sidebar) instead of focusing the header/tab.
+        val lm = recyclerView.layoutManager ?: return false
         return when (lm) {
-            is GridLayoutManager -> position < lm.spanCount.coerceAtLeast(1)
+            is GridLayoutManager -> {
+                val spanCount = lm.spanCount.coerceAtLeast(1)
+                val groupIndex = lm.spanSizeLookup.getSpanGroupIndex(position, spanCount)
+                if (groupIndex != 0) return false
+
+                val firstVisible = lm.findFirstVisibleItemPosition()
+                firstVisible == 0 || !recyclerView.canScrollVertically(-1)
+            }
+
+            is LinearLayoutManager -> {
+                if (position != 0) return false
+                val firstVisible = lm.findFirstVisibleItemPosition()
+                firstVisible == 0 || !recyclerView.canScrollVertically(-1)
+            }
+
             is StaggeredGridLayoutManager -> {
                 val spanCount = lm.spanCount.coerceAtLeast(1)
                 val first = IntArray(spanCount)
                 lm.findFirstVisibleItemPositions(first)
-                first.any { it == position }
+                val nearTop = first.any { it == 0 } || !recyclerView.canScrollVertically(-1)
+                nearTop && first.any { it == position }
             }
-            else -> position == 0
+
+            else -> position == 0 && !recyclerView.canScrollVertically(-1)
         }
     }
 }

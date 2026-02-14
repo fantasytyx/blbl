@@ -8,6 +8,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.viewpager2.adapter.FragmentStateAdapter
+import blbl.cat3399.ui.RefreshKeyHandler
+import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Zone
@@ -54,6 +56,17 @@ class CategoryFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandl
         TabLayoutMediator(binding.tabLayout, binding.viewPager) { tab, position ->
             tab.text = zones[position].title
         }.attach()
+        binding.tabLayout.addOnTabSelectedListener(
+            object : TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabReselected(tab: TabLayout.Tab) {
+                    refreshCurrentPageFromTabReselect()
+                }
+            },
+        )
         val tabLayout = binding.tabLayout
         tabLayout.postIfAlive(isAlive = { _binding != null }) {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus }) { position ->
@@ -90,6 +103,19 @@ class CategoryFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandl
                 }
             }
         binding.viewPager.registerOnPageChangeCallback(pageCallback!!)
+    }
+
+    private fun refreshCurrentPageFromTabReselect(): Boolean {
+        val pagerAdapter = binding.viewPager.adapter as? FragmentStateAdapter ?: return false
+        val position = binding.viewPager.currentItem
+        val itemId = pagerAdapter.getItemId(position)
+        val byTag = childFragmentManager.findFragmentByTag("f$itemId")
+        val pageFragment =
+            when {
+                byTag is RefreshKeyHandler -> byTag
+                else -> childFragmentManager.fragments.firstOrNull { it.isVisible && it is RefreshKeyHandler } as? RefreshKeyHandler
+            } ?: return false
+        return pageFragment.handleRefreshKey()
     }
 
     private fun focusCurrentPageFirstCardFromTab(): Boolean {

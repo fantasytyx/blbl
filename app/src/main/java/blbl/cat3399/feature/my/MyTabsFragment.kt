@@ -17,6 +17,8 @@ import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentMyTabsBinding
 import blbl.cat3399.ui.BackPressHandler
 import com.google.android.material.tabs.TabLayoutMediator
+import blbl.cat3399.ui.RefreshKeyHandler
+import com.google.android.material.tabs.TabLayout
 
 class MyTabsFragment : Fragment(), MyTabContentSwitchFocusHost, BackPressHandler {
     private var _binding: FragmentMyTabsBinding? = null
@@ -43,6 +45,17 @@ class MyTabsFragment : Fragment(), MyTabContentSwitchFocusHost, BackPressHandler
                     else -> getString(R.string.my_tab_like)
                 }
         }.attach()
+        binding.tabLayout.addOnTabSelectedListener(
+            object : TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabReselected(tab: TabLayout.Tab) {
+                    refreshCurrentPageFromTabReselect()
+                }
+            },
+        )
 
         val tabLayout = binding.tabLayout
         tabLayout.postIfAlive(isAlive = { _binding != null }) {
@@ -76,6 +89,17 @@ class MyTabsFragment : Fragment(), MyTabContentSwitchFocusHost, BackPressHandler
 
     override fun onResume() {
         super.onResume()
+    }
+
+    private fun refreshCurrentPageFromTabReselect(): Boolean {
+        val adapter = binding.viewPager.adapter as? FragmentStateAdapter ?: return false
+        val position = binding.viewPager.currentItem
+        val itemId = adapter.getItemId(position)
+        val byTag = childFragmentManager.findFragmentByTag("f$itemId")
+        val target = (byTag as? RefreshKeyHandler)
+            ?: (childFragmentManager.fragments.firstOrNull { it.isVisible && it is RefreshKeyHandler } as? RefreshKeyHandler)
+            ?: return false
+        return target.handleRefreshKey()
     }
 
     private fun focusCurrentPageFirstItem(): Boolean {

@@ -170,10 +170,6 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
         pendingFocusFirstCardFromTab = true
         pendingFocusFirstCardFromContentSwitch = false
         pendingRestorePosition = null
-        if (_binding != null && !binding.swipeRefresh.isRefreshing) {
-            binding.swipeRefresh.isRefreshing = true
-            reload(force = true)
-        }
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }

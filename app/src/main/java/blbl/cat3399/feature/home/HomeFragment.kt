@@ -18,6 +18,8 @@ import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentHomeBinding
 import blbl.cat3399.feature.video.VideoGridTabSwitchFocusHost
 import blbl.cat3399.ui.BackPressHandler
+import blbl.cat3399.ui.RefreshKeyHandler
+import com.google.android.material.tabs.TabLayout
 
 class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
     private var _binding: FragmentHomeBinding? = null
@@ -38,6 +40,19 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
         return pageFragment.requestFocusFirstCardFromContentSwitch()
     }
 
+    private fun refreshCurrentPageFromTabReselect(): Boolean {
+        val adapter = binding.viewPager.adapter as? FragmentStateAdapter ?: return false
+        val position = binding.viewPager.currentItem
+        val itemId = adapter.getItemId(position)
+        val byTag = childFragmentManager.findFragmentByTag("f$itemId")
+        val page =
+            when {
+                byTag is RefreshKeyHandler -> byTag
+                else -> childFragmentManager.fragments.firstOrNull { it.isVisible && it is RefreshKeyHandler } as? RefreshKeyHandler
+            } ?: return false
+        return page.handleRefreshKey()
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentHomeBinding.inflate(inflater, container, false)
         return binding.root
@@ -53,6 +68,17 @@ class HomeFragment : Fragment(), VideoGridTabSwitchFocusHost, BackPressHandler {
                 else -> getString(R.string.tab_cinema)
             }
         }.attach()
+        binding.tabLayout.addOnTabSelectedListener(
+            object : TabLayout.OnTabSelectedListener {
+                override fun onTabSelected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabUnselected(tab: TabLayout.Tab) = Unit
+
+                override fun onTabReselected(tab: TabLayout.Tab) {
+                    refreshCurrentPageFromTabReselect()
+                }
+            },
+        )
         val tabLayout = binding.tabLayout
         tabLayout.postIfAlive(isAlive = { _binding != null }) {
             tabLayout.enableDpadTabFocus(selectOnFocusProvider = { BiliClient.prefs.tabSwitchFollowsFocus }) { position ->

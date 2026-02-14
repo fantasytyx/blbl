@@ -25,7 +25,9 @@ fun TabLayout.enableDpadTabFocus(
         tabView.stateListAnimator = AnimatorInflater.loadStateListAnimator(context, R.animator.blbl_focus_scale)
         tabView.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) return@setOnFocusChangeListener
-            if (selectOnFocusProvider()) getTabAt(index)?.select()
+            if (selectOnFocusProvider() && selectedTabPosition != index) {
+                getTabAt(index)?.select()
+            }
             onTabFocused?.invoke(index)
         }
     }

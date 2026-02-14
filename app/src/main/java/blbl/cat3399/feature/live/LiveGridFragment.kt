@@ -301,10 +301,6 @@ class LiveGridFragment : Fragment(), LivePageFocusTarget, RefreshKeyHandler {
         pendingFocusFirstCardFromContentSwitch = false
         pendingRestorePosition = null
         pendingRestoreAttemptsLeft = 0
-        if (_binding != null && !binding.swipeRefresh.isRefreshing) {
-            binding.swipeRefresh.isRefreshing = true
-            resetAndLoad()
-        }
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }

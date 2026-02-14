@@ -147,10 +147,6 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         pendingFocusFirstCardFromTab = true
         pendingFocusFirstCardFromContentSwitch = false
         pendingRestorePosition = null
-        if (_binding != null && !binding.swipeRefresh.isRefreshing) {
-            binding.swipeRefresh.isRefreshing = true
-            resetAndLoad()
-        }
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }

@@ -329,10 +329,6 @@ class VideoGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTarget {
     override fun requestFocusFirstCardFromTab(): Boolean {
         pendingFocusFirstCardFromTab = true
         pendingFocusFirstCardFromContentSwitch = false
-        if (_binding != null && !binding.swipeRefresh.isRefreshing) {
-            binding.swipeRefresh.isRefreshing = true
-            resetAndLoad()
-        }
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }

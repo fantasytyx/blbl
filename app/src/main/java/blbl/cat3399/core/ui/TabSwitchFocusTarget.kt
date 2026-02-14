@@ -1,7 +1,7 @@
 package blbl.cat3399.core.ui
 
 interface TabSwitchFocusTarget {
-    // Entering content from a focused tab item: refresh page data and focus first card.
+    // Entering content from a focused tab item: focus first card.
     fun requestFocusFirstCardFromTab(): Boolean
 
     // Switching tabs from content edge: restore last focused card when possible, fallback to first card.
