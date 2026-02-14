@@ -48,6 +48,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
 
     private var pendingFocusFirstCardFromTab: Boolean = false
     private var pendingFocusFirstCardFromContentSwitch: Boolean = false
+    private var lastFocusedAdapterPosition: Int? = null
     private var dpadGridController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -142,12 +143,19 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
 
     override fun requestFocusFirstCardFromTab(): Boolean {
         pendingFocusFirstCardFromTab = true
+        pendingFocusFirstCardFromContentSwitch = false
+        pendingRestorePosition = null
+        if (_binding != null && !binding.swipeRefresh.isRefreshing) {
+            binding.swipeRefresh.isRefreshing = true
+            resetAndLoad()
+        }
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }
 
     override fun requestFocusFirstCardFromContentSwitch(): Boolean {
         pendingFocusFirstCardFromContentSwitch = true
+        pendingFocusFirstCardFromTab = false
         if (!isResumed) return true
         return maybeConsumePendingFocusFirstCard()
     }
@@ -161,8 +169,8 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
 
         val focused = activity?.currentFocus
         if (focused != null && focused != binding.recycler && FocusTreeUtils.isDescendantOf(focused, binding.recycler)) {
-            pendingFocusFirstCardFromTab = false
-            pendingFocusFirstCardFromContentSwitch = false
+            rememberFocusedAdapterPositionFromView(focused)
+            clearPendingFocusFlags()
             return false
         }
 
@@ -180,25 +188,54 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
             return true
         }
 
+        val targetPosition = resolvePendingFocusTarget(itemCount = adapter.itemCount)
         val recycler = binding.recycler
         recycler.post outerPost@{
             if (_binding == null) return@outerPost
-            val vh = recycler.findViewHolderForAdapterPosition(0)
+            val vh = recycler.findViewHolderForAdapterPosition(targetPosition)
             if (vh != null) {
                 vh.itemView.requestFocus()
-                pendingFocusFirstCardFromTab = false
-                pendingFocusFirstCardFromContentSwitch = false
+                lastFocusedAdapterPosition = targetPosition
+                clearPendingFocusFlags()
                 return@outerPost
             }
-            recycler.scrollToPosition(0)
+            recycler.scrollToPosition(targetPosition)
             recycler.post innerPost@{
                 if (_binding == null) return@innerPost
-                recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
-                pendingFocusFirstCardFromTab = false
-                pendingFocusFirstCardFromContentSwitch = false
+                recycler.findViewHolderForAdapterPosition(targetPosition)?.itemView?.requestFocus() ?: recycler.requestFocus()
+                lastFocusedAdapterPosition = targetPosition
+                clearPendingFocusFlags()
             }
         }
         return true
+    }
+
+    private fun resolvePendingFocusTarget(itemCount: Int): Int {
+        if (pendingFocusFirstCardFromTab) return 0
+        if (!pendingFocusFirstCardFromContentSwitch) return 0
+        val saved = lastFocusedAdapterPosition ?: return 0
+        return saved.coerceIn(0, itemCount - 1)
+    }
+
+    private fun clearPendingFocusFlags() {
+        pendingFocusFirstCardFromTab = false
+        pendingFocusFirstCardFromContentSwitch = false
+    }
+
+    private fun captureCurrentFocusedAdapterPosition() {
+        val recycler = _binding?.recycler ?: return
+        val focused = activity?.currentFocus ?: return
+        rememberFocusedAdapterPositionFromView(focused, recycler)
+    }
+
+    private fun rememberFocusedAdapterPositionFromView(
+        focusedView: View,
+        recycler: RecyclerView = binding.recycler,
+    ) {
+        val holder = recycler.findContainingViewHolder(focusedView) ?: return
+        val position = holder.bindingAdapterPosition
+        if (position == RecyclerView.NO_POSITION) return
+        lastFocusedAdapterPosition = position
     }
 
     private fun maybeTriggerInitialLoad() {
@@ -315,6 +352,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         val cur = tabLayout.selectedTabPosition.takeIf { it >= 0 } ?: 0
         val next = cur + 1
         if (next >= tabLayout.tabCount) return false
+        captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(next)?.select() ?: return false
         tabLayout.post {
             (parentFragment as? VideoGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
@@ -331,6 +369,7 @@ class PgcRecommendGridFragment : Fragment(), RefreshKeyHandler, TabSwitchFocusTa
         val cur = tabLayout.selectedTabPosition.takeIf { it >= 0 } ?: 0
         val prev = cur - 1
         if (prev < 0) return false
+        captureCurrentFocusedAdapterPosition()
         tabLayout.getTabAt(prev)?.select() ?: return false
         tabLayout.post {
             (parentFragment as? VideoGridTabSwitchFocusHost)?.requestFocusCurrentPageFirstCardFromContentSwitch()
