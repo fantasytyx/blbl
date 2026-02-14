@@ -37,6 +37,7 @@ class PlayerCommentsAdapter(
         val contextTag: String? = null,
         val canOpenThread: Boolean = false,
         val isThreadRoot: Boolean = false,
+        val isUp: Boolean = false,
     )
 
     private val items = ArrayList<Item>()
@@ -84,11 +85,9 @@ class PlayerCommentsAdapter(
             binding.tvContextTag.visibility = if (item.contextTag.isNullOrBlank()) View.GONE else View.VISIBLE
 
             binding.tvUser.text = item.userName.ifBlank { "-" }
+            binding.tvUpBadge.visibility = if (item.isUp) View.VISIBLE else View.GONE
             binding.tvTime.text = Format.pubDateText(item.ctimeSec)
             binding.tvMessage.text = item.message.ifBlank { "-" }
-
-            val likeText = Format.count(item.likeCount)
-            binding.tvLike.text = "赞 $likeText"
 
             run {
                 val previews = item.replyPreviews.take(2)
@@ -114,9 +113,11 @@ class PlayerCommentsAdapter(
                 val rc = Format.count(item.replyCount.toLong())
                 binding.tvReply.text = "查看全部 $rc 条回复"
                 binding.tvReply.visibility = View.VISIBLE
+                binding.rowMeta.visibility = View.VISIBLE
             } else {
                 binding.tvReply.text = ""
                 binding.tvReply.visibility = View.GONE
+                binding.rowMeta.visibility = View.GONE
             }
 
             ImageLoader.loadInto(binding.ivAvatar, item.avatarUrl)

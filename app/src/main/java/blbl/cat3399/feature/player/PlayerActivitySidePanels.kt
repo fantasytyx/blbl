@@ -9,6 +9,8 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
+import blbl.cat3399.core.ui.DpadGridController
+import blbl.cat3399.core.ui.postIfAlive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,8 +31,6 @@ internal fun PlayerActivity.isCommentThreadVisible(): Boolean = binding.recycler
 internal fun PlayerActivity.isSidePanelVisible(): Boolean = isSettingsPanelVisible() || isCommentsPanelVisible()
 
 internal fun PlayerActivity.initSidePanels() {
-    binding.btnCommentsPanelBack.setOnClickListener { onCommentsBackPressed() }
-
     binding.chipCommentSortHot.setOnClickListener { applyCommentSort(COMMENT_SORT_HOT) }
     binding.chipCommentSortNew.setOnClickListener { applyCommentSort(COMMENT_SORT_NEW) }
     updateCommentSortUi()
@@ -97,6 +97,67 @@ internal fun PlayerActivity.initSidePanels() {
             },
         )
     }
+
+    commentsDpadController?.release()
+    commentThreadDpadController?.release()
+    commentsDpadController =
+        DpadGridController(
+            recyclerView = binding.recyclerComments,
+            callbacks =
+                object : DpadGridController.Callbacks {
+                    override fun onTopEdge(): Boolean {
+                        focusSelectedCommentSortChip()
+                        return true
+                    }
+
+                    override fun onLeftEdge(): Boolean = false
+
+                    override fun onRightEdge() {}
+
+                    override fun canLoadMore(): Boolean = !commentsEndReached
+
+                    override fun loadMore() {
+                        loadMoreComments()
+                    }
+                },
+            config =
+                DpadGridController.Config(
+                    isEnabled = {
+                        !isFinishing &&
+                            !isDestroyed &&
+                            isCommentsPanelVisible() &&
+                            !isCommentThreadVisible()
+                    },
+                ),
+        ).also { it.install() }
+
+    commentThreadDpadController =
+        DpadGridController(
+            recyclerView = binding.recyclerCommentThread,
+            callbacks =
+                object : DpadGridController.Callbacks {
+                    override fun onTopEdge(): Boolean = false
+
+                    override fun onLeftEdge(): Boolean = false
+
+                    override fun onRightEdge() {}
+
+                    override fun canLoadMore(): Boolean = !commentThreadEndReached
+
+                    override fun loadMore() {
+                        loadMoreCommentThread()
+                    }
+                },
+            config =
+                DpadGridController.Config(
+                    isEnabled = {
+                        !isFinishing &&
+                            !isDestroyed &&
+                            isCommentsPanelVisible() &&
+                            isCommentThreadVisible()
+                    },
+                ),
+        ).also { it.install() }
 }
 
 internal fun PlayerActivity.toggleSettingsPanel() {
@@ -132,9 +193,9 @@ internal fun PlayerActivity.toggleCommentsPanel() {
 
 internal fun PlayerActivity.showCommentsPanel() {
     binding.settingsPanel.visibility = View.GONE
+    setControlsVisible(true)
     binding.commentsPanel.visibility = View.VISIBLE
     showCommentsRoot()
-    setControlsVisible(true)
     ensureCommentsLoaded()
     focusCommentsPanel()
 }
@@ -148,7 +209,8 @@ internal fun PlayerActivity.hideCommentsPanel() {
 internal fun PlayerActivity.onSidePanelBackPressed(): Boolean {
     if (isCommentThreadVisible()) {
         showCommentsRoot()
-        focusCommentsPanel()
+        focusCommentsPanel(targetRpid = commentThreadReturnFocusRpid)
+        commentThreadReturnFocusRpid = 0L
         return true
     }
     if (isCommentsPanelVisible()) {
@@ -165,7 +227,8 @@ internal fun PlayerActivity.onSidePanelBackPressed(): Boolean {
 internal fun PlayerActivity.onCommentsBackPressed() {
     if (isCommentThreadVisible()) {
         showCommentsRoot()
-        focusCommentsPanel()
+        focusCommentsPanel(targetRpid = commentThreadReturnFocusRpid)
+        commentThreadReturnFocusRpid = 0L
     } else {
         hideCommentsPanel()
     }
@@ -175,34 +238,65 @@ internal fun PlayerActivity.showCommentsRoot() {
     binding.recyclerComments.visibility = View.VISIBLE
     binding.recyclerCommentThread.visibility = View.GONE
     binding.rowCommentSort.visibility = View.VISIBLE
-    binding.tvCommentsPanelTitle.text = getString(R.string.player_panel_comments)
     commentThreadRootRpid = 0L
 }
 
 internal fun PlayerActivity.openCommentThread(rootRpid: Long) {
     val safeRoot = rootRpid.takeIf { it > 0L } ?: return
+    commentThreadReturnFocusRpid = safeRoot
     commentThreadRootRpid = safeRoot
     binding.recyclerComments.visibility = View.GONE
     binding.recyclerCommentThread.visibility = View.VISIBLE
     binding.rowCommentSort.visibility = View.GONE
-    binding.tvCommentsPanelTitle.text = getString(R.string.player_panel_comment_thread)
     reloadCommentThread()
     focusCommentThread()
 }
 
-internal fun PlayerActivity.focusCommentsPanel() {
+private fun PlayerActivity.focusSelectedCommentSortChip() {
+    val target =
+        when (commentSort) {
+            COMMENT_SORT_NEW -> binding.chipCommentSortNew
+            else -> binding.chipCommentSortHot
+        }
+    target.requestFocus()
+}
+
+internal fun PlayerActivity.focusCommentsPanel(targetRpid: Long? = null) {
+    val safeRpid = targetRpid?.takeIf { it > 0L }
     binding.recyclerComments.post {
+        if (safeRpid != null && focusCommentInRootList(rpid = safeRpid)) {
+            return@post
+        }
+
         val child = binding.recyclerComments.getChildAt(0)
         if (child != null) {
             child.requestFocus()
             return@post
         }
         if (commentsItems.isEmpty()) {
-            binding.chipCommentSortHot.requestFocus()
+            focusSelectedCommentSortChip()
         } else {
             binding.recyclerComments.requestFocus()
         }
     }
+}
+
+private fun PlayerActivity.focusCommentInRootList(rpid: Long): Boolean {
+    val targetPos = commentsItems.indexOfFirst { it.rpid == rpid }
+    if (targetPos !in commentsItems.indices) return false
+
+    val rv = binding.recyclerComments
+    val direct = rv.findViewHolderForAdapterPosition(targetPos)?.itemView
+    if (direct != null) {
+        direct.requestFocus()
+        return true
+    }
+
+    rv.scrollToPosition(targetPos)
+    rv.post {
+        rv.findViewHolderForAdapterPosition(targetPos)?.itemView?.requestFocus()
+    }
+    return true
 }
 
 internal fun PlayerActivity.focusCommentThread() {
@@ -257,6 +351,7 @@ internal fun PlayerActivity.reloadComments() {
         return
     }
 
+    commentsDpadController?.clearPendingFocusAfterLoadMore()
     commentsFetchJob?.cancel()
     commentsFetchJob = null
     val token = ++commentsFetchToken
@@ -291,7 +386,7 @@ internal fun PlayerActivity.reloadComments() {
                         val page = data.optJSONObject("page") ?: JSONObject()
                         val count = page.optInt("count", -1).takeIf { it >= 0 } ?: -1
                         val replies = data.optJSONArray("replies") ?: JSONArray()
-                        val items = parseReplyList(replies, oid = aid, canOpenThread = true)
+                        val items = parseReplyList(replies, oid = aid, canOpenThread = true, upMid = currentUpMid)
                         count to items
                     }
                 if (token != commentsFetchToken) return@launch
@@ -355,7 +450,7 @@ internal fun PlayerActivity.loadMoreComments() {
                         val page = data.optJSONObject("page") ?: JSONObject()
                         val count = page.optInt("count", commentsTotalCount).takeIf { it >= 0 } ?: commentsTotalCount
                         val replies = data.optJSONArray("replies") ?: JSONArray()
-                        val items = parseReplyList(replies, oid = aid, canOpenThread = true)
+                        val items = parseReplyList(replies, oid = aid, canOpenThread = true, upMid = currentUpMid)
                         count to items
                     }
                 if (token != commentsFetchToken) return@launch
@@ -364,6 +459,7 @@ internal fun PlayerActivity.loadMoreComments() {
                 commentsTotalCount = totalCount
                 if (list.isEmpty()) {
                     commentsEndReached = true
+                    commentsDpadController?.clearPendingFocusAfterLoadMore()
                     return@launch
                 }
                 commentsPage = nextPage
@@ -371,6 +467,9 @@ internal fun PlayerActivity.loadMoreComments() {
                 commentsEndReached =
                     commentsTotalCount >= 0 && commentsItems.size >= commentsTotalCount
                 (binding.recyclerComments.adapter as? PlayerCommentsAdapter)?.appendItems(list)
+                binding.recyclerComments.postIfAlive(isAlive = { !isFinishing && !isDestroyed }) {
+                    commentsDpadController?.consumePendingFocusAfterLoadMore()
+                }
             } catch (t: Throwable) {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
@@ -386,6 +485,7 @@ internal fun PlayerActivity.reloadCommentThread() {
     val aid = currentAid?.takeIf { it > 0L } ?: return
     val root = commentThreadRootRpid.takeIf { it > 0L } ?: return
 
+    commentThreadDpadController?.clearPendingFocusAfterLoadMore()
     commentThreadFetchJob?.cancel()
     commentThreadFetchJob = null
     val token = ++commentThreadFetchToken
@@ -415,7 +515,6 @@ internal fun PlayerActivity.reloadCommentThread() {
                 if (currentAid?.takeIf { it > 0L } != aid) return@launch
                 if (commentThreadRootRpid != root) return@launch
 
-                val contextTagRoot = getString(R.string.player_comment_thread_root)
                 val (totalCount, rootItemKeyed, replyItemsKeyed) =
                     withContext(Dispatchers.Default) {
                         val page = data.optJSONObject("page") ?: JSONObject()
@@ -424,11 +523,11 @@ internal fun PlayerActivity.reloadCommentThread() {
                         val rootObj = data.optJSONObject("root")
                         val rootItem =
                             rootObj
-                                ?.let { parseReplyItem(it, oid = aid, contextTag = contextTagRoot, canOpenThread = false) }
+                                ?.let { parseReplyItem(it, oid = aid, contextTag = null, canOpenThread = false, upMid = currentUpMid) }
                                 ?.let { it.copy(key = "thread_root:${it.rpid}", isThreadRoot = true) }
 
                         val replies = data.optJSONArray("replies") ?: JSONArray()
-                        val list = parseReplyList(replies, oid = aid, canOpenThread = false)
+                        val list = parseReplyList(replies, oid = aid, canOpenThread = false, upMid = currentUpMid)
                         val keyed = list.map { it.copy(key = "thread:${it.rpid}") }
 
                         Triple(count, rootItem, keyed)
@@ -447,6 +546,9 @@ internal fun PlayerActivity.reloadCommentThread() {
                         (commentThreadTotalCount >= 0 && loadedReplies >= commentThreadTotalCount)
 
                 (binding.recyclerCommentThread.adapter as? PlayerCommentsAdapter)?.setItems(commentThreadItems)
+                binding.recyclerCommentThread.postIfAlive(isAlive = { !isFinishing && !isDestroyed }) {
+                    commentThreadDpadController?.consumePendingFocusAfterLoadMore()
+                }
 
                 if (commentThreadItems.isEmpty()) {
                     binding.tvCommentsHint.text = getString(R.string.player_comment_thread_empty)
@@ -497,7 +599,7 @@ internal fun PlayerActivity.loadMoreCommentThread() {
                 val list =
                     withContext(Dispatchers.Default) {
                         val replies = data.optJSONArray("replies") ?: JSONArray()
-                        parseReplyList(replies, oid = aid, canOpenThread = false).map { it.copy(key = "thread:${it.rpid}") }
+                        parseReplyList(replies, oid = aid, canOpenThread = false, upMid = currentUpMid).map { it.copy(key = "thread:${it.rpid}") }
                     }
                 if (token != commentThreadFetchToken) return@launch
                 if (currentAid?.takeIf { it > 0L } != aid) return@launch
@@ -505,6 +607,7 @@ internal fun PlayerActivity.loadMoreCommentThread() {
 
                 if (list.isEmpty()) {
                     commentThreadEndReached = true
+                    commentThreadDpadController?.clearPendingFocusAfterLoadMore()
                     return@launch
                 }
 
@@ -517,6 +620,9 @@ internal fun PlayerActivity.loadMoreCommentThread() {
                     commentThreadTotalCount >= 0 && loadedReplies >= commentThreadTotalCount
 
                 (binding.recyclerCommentThread.adapter as? PlayerCommentsAdapter)?.appendItems(list)
+                binding.recyclerCommentThread.postIfAlive(isAlive = { !isFinishing && !isDestroyed }) {
+                    commentThreadDpadController?.consumePendingFocusAfterLoadMore()
+                }
             } catch (t: Throwable) {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
@@ -528,12 +634,12 @@ internal fun PlayerActivity.loadMoreCommentThread() {
         }
 }
 
-private fun parseReplyList(arr: JSONArray, oid: Long, canOpenThread: Boolean): List<PlayerCommentsAdapter.Item> {
+private fun parseReplyList(arr: JSONArray, oid: Long, canOpenThread: Boolean, upMid: Long): List<PlayerCommentsAdapter.Item> {
     if (arr.length() <= 0) return emptyList()
     val out = ArrayList<PlayerCommentsAdapter.Item>(arr.length())
     for (i in 0 until arr.length()) {
         val obj = arr.optJSONObject(i) ?: continue
-        val item = parseReplyItem(obj, oid = oid, contextTag = null, canOpenThread = canOpenThread) ?: continue
+        val item = parseReplyItem(obj, oid = oid, contextTag = null, canOpenThread = canOpenThread, upMid = upMid) ?: continue
         out.add(item)
     }
     return out
@@ -544,6 +650,7 @@ private fun parseReplyItem(
     oid: Long,
     contextTag: String?,
     canOpenThread: Boolean,
+    upMid: Long,
 ): PlayerCommentsAdapter.Item? {
     val rpid = obj.optLong("rpid", 0L).takeIf { it > 0L } ?: return null
     val member = obj.optJSONObject("member") ?: JSONObject()
@@ -564,6 +671,7 @@ private fun parseReplyItem(
         } else {
             emptyList()
         }
+    val isUp = upMid > 0L && mid == upMid
 
     return PlayerCommentsAdapter.Item(
         key = rpid.toString(),
@@ -580,6 +688,7 @@ private fun parseReplyItem(
         replyPreviews = replyPreviews,
         contextTag = contextTag,
         canOpenThread = canOpenThread,
+        isUp = isUp,
     )
 }
 

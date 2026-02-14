@@ -563,6 +563,8 @@
         android:layout_width="360dp"
         android:layout_height="0dp"
         android:layout_margin="16dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginBottom="40dp"
         android:visibility="gone"
         app:cardBackgroundColor="#CC1E1E1E"
         app:cardCornerRadius="16dp"
@@ -574,47 +576,17 @@
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:padding="12dp">
-
-            <ImageButton
-                android:id="@+id/btn_comments_panel_back"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/blbl_focus_bg_round"
-                android:contentDescription="@string/player_btn_back"
-                android:focusable="true"
-                android:padding="8dp"
-                android:scaleType="fitCenter"
-                android:src="@drawable/ic_back"
-                android:tint="@color/player_button_tint"
-                app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toTopOf="parent" />
-
-            <TextView
-                android:id="@+id/tv_comments_panel_title"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1"
-                android:text="@string/player_panel_comments"
-                android:textColor="@color/blbl_text"
-                android:textSize="18sp"
-                android:textStyle="bold"
-                app:layout_constraintBottom_toBottomOf="@id/btn_comments_panel_back"
-                app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintStart_toEndOf="@id/btn_comments_panel_back"
-                app:layout_constraintTop_toTopOf="@id/btn_comments_panel_back" />
+            android:padding="8dp">
 
             <LinearLayout
                 android:id="@+id/row_comment_sort"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/btn_comments_panel_back">
+                app:layout_constraintTop_toTopOf="parent">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -631,6 +603,8 @@
                     android:background="@drawable/bg_player_sort_chip"
                     android:clickable="true"
                     android:focusable="true"
+                    android:nextFocusUp="@id/chip_comment_sort_hot"
+                    android:nextFocusRight="@id/chip_comment_sort_new"
                     android:paddingHorizontal="12dp"
                     android:paddingVertical="6dp"
                     android:stateListAnimator="@animator/blbl_focus_scale"
@@ -646,6 +620,9 @@
                     android:background="@drawable/bg_player_sort_chip"
                     android:clickable="true"
                     android:focusable="true"
+                    android:nextFocusLeft="@id/chip_comment_sort_hot"
+                    android:nextFocusUp="@id/chip_comment_sort_new"
+                    android:nextFocusRight="@id/chip_comment_sort_new"
                     android:paddingHorizontal="12dp"
                     android:paddingVertical="6dp"
                     android:stateListAnimator="@animator/blbl_focus_scale"
@@ -658,7 +635,7 @@
                 android:id="@+id/comments_content"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="8dp"
                 app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
@@ -670,7 +647,10 @@
                     android:layout_height="match_parent"
                     android:clipChildren="false"
                     android:clipToPadding="false"
-                    android:padding="12dp" />
+                    android:paddingStart="4dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingBottom="4dp" />
 
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/recycler_comment_thread"
@@ -678,7 +658,10 @@
                     android:layout_height="match_parent"
                     android:clipChildren="false"
                     android:clipToPadding="false"
-                    android:padding="12dp"
+                    android:paddingStart="4dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingBottom="4dp"
                     android:visibility="gone" />
 
                 <TextView

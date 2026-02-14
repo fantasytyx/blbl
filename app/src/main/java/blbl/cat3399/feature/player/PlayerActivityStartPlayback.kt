@@ -76,6 +76,7 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(exo: ExoPlayer) {
     commentThreadFetchJob = null
     commentThreadFetchToken++
     commentThreadRootRpid = 0L
+    commentThreadReturnFocusRpid = 0L
     commentThreadPage = 1
     commentThreadTotalCount = -1
     commentThreadEndReached = false
@@ -86,7 +87,6 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(exo: ExoPlayer) {
     binding.recyclerComments.visibility = View.VISIBLE
     binding.recyclerCommentThread.visibility = View.GONE
     binding.rowCommentSort.visibility = View.VISIBLE
-    binding.tvCommentsPanelTitle.text = getString(blbl.cat3399.R.string.player_panel_comments)
     binding.tvCommentsHint.visibility = View.GONE
     (binding.recyclerComments.adapter as? PlayerCommentsAdapter)?.setItems(emptyList())
     (binding.recyclerCommentThread.adapter as? PlayerCommentsAdapter)?.setItems(emptyList())

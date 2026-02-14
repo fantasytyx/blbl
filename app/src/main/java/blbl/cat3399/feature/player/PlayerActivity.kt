@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.Looper
 import android.os.SystemClock
 import android.util.TypedValue
+import android.view.FocusFinder
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -55,6 +56,7 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.ActivityStackLimiter
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.SingleChoiceDialog
@@ -127,12 +129,16 @@ class PlayerActivity : BaseActivity() {
     internal val commentsItems: ArrayList<PlayerCommentsAdapter.Item> = ArrayList()
 
     internal var commentThreadRootRpid: Long = 0L
+    internal var commentThreadReturnFocusRpid: Long = 0L
     internal var commentThreadFetchJob: kotlinx.coroutines.Job? = null
     internal var commentThreadFetchToken: Int = 0
     internal var commentThreadPage: Int = 1
     internal var commentThreadTotalCount: Int = -1
     internal var commentThreadEndReached: Boolean = false
     internal val commentThreadItems: ArrayList<PlayerCommentsAdapter.Item> = ArrayList()
+
+    internal var commentsDpadController: DpadGridController? = null
+    internal var commentThreadDpadController: DpadGridController? = null
 
     private val doubleBackToExit by lazy {
         DoubleBackToExitHandler(context = this, windowMs = BACK_DOUBLE_PRESS_WINDOW_MS) {
@@ -1236,7 +1242,25 @@ class PlayerActivity : BaseActivity() {
             KeyEvent.KEYCODE_DPAD_LEFT,
             KeyEvent.KEYCODE_MEDIA_REWIND,
             -> {
-                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && isSidePanelVisible()) return onSidePanelBackPressed()
+                if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && isSidePanelVisible()) {
+                    val panelRoot =
+                        when {
+                            isCommentsPanelVisible() -> binding.commentsPanel
+                            isSettingsPanelVisible() -> binding.settingsPanel
+                            else -> null
+                        }
+                    val focusedView = currentFocus
+                    val hasLeftFocusInPanel =
+                        if (panelRoot != null && focusedView != null) {
+                            FocusFinder.getInstance()
+                                .findNextFocus(panelRoot, focusedView, View.FOCUS_LEFT) != null
+                        } else {
+                            false
+                        }
+                    // Only treat LEFT as "back" when the focus cannot move further left inside the panel.
+                    if (!hasLeftFocusInPanel) return onSidePanelBackPressed()
+                    return super.dispatchKeyEvent(event)
+                }
                 if (isSidePanelVisible()) return super.dispatchKeyEvent(event)
                 if (osdMode == OsdMode.Full && binding.seekProgress.isFocused) return super.dispatchKeyEvent(event)
                 if (osdMode == OsdMode.Full && (binding.topBar.hasFocus() || binding.bottomBar.hasFocus())) return super.dispatchKeyEvent(event)
