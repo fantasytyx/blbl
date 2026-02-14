@@ -135,6 +135,20 @@ class LiveRoomAdapter(
             binding.tvBadge.setPadding(padH, padV, padH, padV)
             binding.llStats.setPadding(padH, padV, padH, padV)
 
+            run {
+                fun applyShiftY() {
+                    val overlayH = binding.llStats.height
+                    val shiftY = (textMargin + padV) * 0.2f + overlayH * 0.2f
+                    binding.llStats.translationY = shiftY
+                }
+
+                if (binding.llStats.height > 0) {
+                    applyShiftY()
+                } else {
+                    binding.root.post { applyShiftY() }
+                }
+            }
+
             binding.tvBadge.setTextSize(
                 TypedValue.COMPLEX_UNIT_PX,
                 scaledPxF(R.dimen.video_card_duration_text_size_tv),

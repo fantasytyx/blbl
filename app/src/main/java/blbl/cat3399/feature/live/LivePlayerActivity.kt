@@ -890,7 +890,7 @@ class LivePlayerActivity : BaseActivity() {
 
         private const val LIVE_QN_ORIGINAL = 10_000
         private const val AUTO_HIDE_MS = 4_000L
-        private const val BACK_DOUBLE_PRESS_WINDOW_MS = 1_500L
+        private const val BACK_DOUBLE_PRESS_WINDOW_MS = 2_500L
         private const val AUTO_FAILOVER_WINDOW_MS = 12_000L
         private const val AUTO_FAILOVER_MIN_INTERVAL_MS = 1_200L
         private const val AUTO_FAILOVER_MAX_SWITCHES = 4
