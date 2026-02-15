@@ -59,6 +59,7 @@ import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
 import blbl.cat3399.core.ui.FocusReturn
+import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
@@ -808,6 +809,7 @@ class PlayerActivity : BaseActivity() {
         refreshSettings(settingsAdapter)
         updateDebugOverlay()
         initSidePanels()
+        initRecommendPanel()
 
         initControls(exo)
         applyActionButtonsVisibility()
@@ -1072,6 +1074,46 @@ class PlayerActivity : BaseActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+
+        if (isRecommendPanelVisible()) {
+            val focused = currentFocus
+            val focusInPanel = focused != null && FocusTreeUtils.isDescendantOf(focused, binding.recommendPanel)
+
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                // Close the recommend panel first; never exit the player while it's visible.
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    finishOnBackKeyUp = false
+                    hideRecommendPanel(restoreFocus = true)
+                }
+                return true
+            }
+
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    hideRecommendPanel(restoreFocus = true)
+                }
+                return true
+            }
+
+            // Let the focused card handle DPAD navigation/selection; prevent PlayerActivity's
+            // global DPAD shortcuts from stealing focus and causing outflow.
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT,
+                KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_DPAD_CENTER,
+                KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_NUMPAD_ENTER,
+                -> {
+                    if (event.action == KeyEvent.ACTION_DOWN && isInteractionKey(keyCode)) noteUserInteraction()
+                    if (!focusInPanel) {
+                        ensureRecommendPanelFocus()
+                        return true
+                    }
+                    return super.dispatchKeyEvent(event)
+                }
+            }
+        }
 
         if (event.action == KeyEvent.ACTION_UP) {
             if (keyCode == KeyEvent.KEYCODE_BACK) {

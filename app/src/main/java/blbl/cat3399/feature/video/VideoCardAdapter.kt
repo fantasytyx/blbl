@@ -18,6 +18,8 @@ import kotlin.math.roundToInt
 class VideoCardAdapter(
     private val onClick: (VideoCard, Int) -> Unit,
     private val onLongClick: ((VideoCard, Int) -> Boolean)? = null,
+    private val fixedItemWidthTvDimen: Int? = null,
+    private val fixedItemMarginTvDimen: Int? = null,
 ) : RecyclerView.Adapter<VideoCardAdapter.Vh>() {
     private val items = ArrayList<VideoCard>()
 
@@ -49,14 +51,18 @@ class VideoCardAdapter(
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {
         val binding = ItemVideoCardBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return Vh(binding)
+        return Vh(binding, fixedItemWidthTvDimen, fixedItemMarginTvDimen)
     }
 
     override fun onBindViewHolder(holder: Vh, position: Int) = holder.bind(items[position], onClick, onLongClick)
 
     override fun getItemCount(): Int = items.size
 
-    class Vh(private val binding: ItemVideoCardBinding) : RecyclerView.ViewHolder(binding.root) {
+    class Vh(
+        private val binding: ItemVideoCardBinding,
+        private val fixedItemWidthTvDimen: Int?,
+        private val fixedItemMarginTvDimen: Int?,
+    ) : RecyclerView.ViewHolder(binding.root) {
         private var lastUiScale: Float? = null
         private var baseMsView: Int? = null
         private var baseMsDanmakuIcon: Int? = null
@@ -101,7 +107,21 @@ class VideoCardAdapter(
             fun scaledPx(id: Int): Int = (px(id) * uiScale).roundToInt().coerceAtLeast(0)
             fun scaledPxF(id: Int): Float = pxF(id) * uiScale
 
-            val margin = scaledPx(R.dimen.video_card_margin_tv)
+            if (fixedItemWidthTvDimen != null) {
+                val w = scaledPx(fixedItemWidthTvDimen).coerceAtLeast(1)
+                val rootLp =
+                    (binding.root.layoutParams as? MarginLayoutParams)
+                        ?: MarginLayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                        )
+                if (rootLp.width != w) {
+                    rootLp.width = w
+                    binding.root.layoutParams = rootLp
+                }
+            }
+
+            val margin = scaledPx(fixedItemMarginTvDimen ?: R.dimen.video_card_margin_tv)
             val rootLp = binding.root.layoutParams as? MarginLayoutParams
             if (rootLp != null) {
                 if (rootLp.leftMargin != margin || rootLp.topMargin != margin || rootLp.rightMargin != margin || rootLp.bottomMargin != margin) {

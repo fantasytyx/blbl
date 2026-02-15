@@ -84,6 +84,7 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(exo: ExoPlayer) {
 
     binding.settingsPanel.visibility = View.GONE
     binding.commentsPanel.visibility = View.GONE
+    hideRecommendPanel(restoreFocus = false)
     binding.recyclerComments.visibility = View.VISIBLE
     binding.recyclerCommentThread.visibility = View.GONE
     binding.rowCommentSort.visibility = View.VISIBLE

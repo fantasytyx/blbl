@@ -70,6 +70,10 @@
     <dimen name="video_card_title_text_size_tv">18sp</dimen>
     <dimen name="video_card_subtitle_text_size_tv">14sp</dimen>
 
+    <!-- Player: bottom recommend panel -->
+    <dimen name="player_recommend_card_width_tv">260dp</dimen>
+    <dimen name="player_recommend_card_margin_tv">6dp</dimen>
+
     <!-- Video detail: header (baseline 1080p@1.5) -->
     <dimen name="video_detail_header_padding_start_tv">16dp</dimen>
     <dimen name="video_detail_header_padding_top_tv">16dp</dimen>

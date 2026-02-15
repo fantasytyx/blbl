@@ -395,31 +395,7 @@ internal fun PlayerActivity.showRecommendDialog() {
 }
 
 internal fun PlayerActivity.showRecommendDialog(items: List<VideoCard>) {
-    val labels =
-        items.mapIndexed { index, item ->
-            item.title.trim().takeIf { it.isNotBlank() } ?: "视频 ${index + 1}"
-        }
-    SingleChoiceDialog.show(
-        context = this,
-        title = "推荐视频",
-        items = labels,
-        checkedIndex = 0,
-        negativeText = "关闭",
-        onNegative = { binding.btnRecommend.post { binding.btnRecommend.requestFocus() } },
-    ) { which, _ ->
-        val picked = items.getOrNull(which) ?: return@show
-        val bvid = picked.bvid.trim()
-        if (bvid.isBlank()) return@show
-        startPlayback(
-            bvid = bvid,
-            cidExtra = picked.cid?.takeIf { it > 0 },
-            epIdExtra = null,
-            aidExtra = null,
-            initialTitle = picked.title.takeIf { it.isNotBlank() },
-        )
-        setControlsVisible(true)
-        binding.btnRecommend.post { binding.btnRecommend.requestFocus() }
-    }
+    showRecommendPanel(items)
 }
 
 internal fun PlayerActivity.pickRecommendedVideo(items: List<VideoCard>, excludeBvid: String): VideoCard? {
