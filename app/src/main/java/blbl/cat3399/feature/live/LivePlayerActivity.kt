@@ -25,6 +25,7 @@ import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
+import blbl.cat3399.core.ui.FocusReturn
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
@@ -47,6 +48,7 @@ import kotlin.math.roundToInt
 class LivePlayerActivity : BaseActivity() {
     private lateinit var binding: ActivityPlayerBinding
     private var player: ExoPlayer? = null
+    private val settingsPanelReturnFocus = FocusReturn()
     private var autoHideJob: Job? = null
     private var debugJob: Job? = null
     private var autoFailoverJob: Job? = null
@@ -167,12 +169,15 @@ class LivePlayerActivity : BaseActivity() {
         }
         binding.btnAdvanced.setOnClickListener {
             val willShow = binding.settingsPanel.visibility != View.VISIBLE
-            binding.settingsPanel.visibility = if (willShow) View.VISIBLE else View.GONE
             setControlsVisible(true)
             if (willShow) {
+                settingsPanelReturnFocus.capture(currentFocus)
+                binding.settingsPanel.visibility = View.VISIBLE
                 focusSettingsPanel()
             } else {
-                focusAdvancedControl()
+                // Restore focus before hiding the panel to avoid a visible focus "double jump".
+                settingsPanelReturnFocus.restoreAndClear(fallback = binding.btnAdvanced, postOnFail = false)
+                binding.settingsPanel.visibility = View.GONE
             }
         }
         binding.btnDanmaku.setOnClickListener {
@@ -184,9 +189,9 @@ class LivePlayerActivity : BaseActivity() {
 
         binding.playerView.setOnClickListener {
             if (binding.settingsPanel.visibility == View.VISIBLE) {
-                binding.settingsPanel.visibility = View.GONE
                 setControlsVisible(true)
-                focusFirstControl()
+                settingsPanelReturnFocus.restoreAndClear(fallback = binding.btnAdvanced, postOnFail = false)
+                binding.settingsPanel.visibility = View.GONE
                 return@setOnClickListener
             }
             toggleControls()
@@ -352,9 +357,9 @@ class LivePlayerActivity : BaseActivity() {
         if (isExitKey(keyCode)) {
             finishOnBackKeyUp = false
             if (binding.settingsPanel.visibility == View.VISIBLE) {
-                binding.settingsPanel.visibility = View.GONE
                 setControlsVisible(true)
-                focusAdvancedControl()
+                settingsPanelReturnFocus.restoreAndClear(fallback = binding.btnAdvanced, postOnFail = false)
+                binding.settingsPanel.visibility = View.GONE
                 return true
             }
             if (controlsVisible) {
