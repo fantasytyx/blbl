@@ -169,6 +169,10 @@ internal fun PlayerActivity.toggleSettingsPanel() {
 }
 
 internal fun PlayerActivity.showSettingsPanel() {
+    val enteringSidePanelMode = !isSidePanelVisible()
+    if (enteringSidePanelMode) {
+        sidePanelFocusReturn.capture(currentFocus)
+    }
     binding.commentsPanel.visibility = View.GONE
     // Make sure OSD (top/bottom bars) is visible first, so the panel height stays stable
     // even if it relies on constraints to those bars.
@@ -178,9 +182,11 @@ internal fun PlayerActivity.showSettingsPanel() {
 }
 
 internal fun PlayerActivity.hideSettingsPanel() {
-    binding.settingsPanel.visibility = View.GONE
     setControlsVisible(true)
-    focusAdvancedControl()
+    // Restore focus before hiding the panel to avoid the system picking a temporary fallback
+    // (e.g. top bar back button) and causing a visible "double jump".
+    sidePanelFocusReturn.restoreAndClear(fallback = binding.btnAdvanced, postOnFail = false)
+    binding.settingsPanel.visibility = View.GONE
 }
 
 internal fun PlayerActivity.toggleCommentsPanel() {
@@ -192,6 +198,10 @@ internal fun PlayerActivity.toggleCommentsPanel() {
 }
 
 internal fun PlayerActivity.showCommentsPanel() {
+    val enteringSidePanelMode = !isSidePanelVisible()
+    if (enteringSidePanelMode) {
+        sidePanelFocusReturn.capture(currentFocus)
+    }
     binding.settingsPanel.visibility = View.GONE
     setControlsVisible(true)
     binding.commentsPanel.visibility = View.VISIBLE
@@ -201,9 +211,10 @@ internal fun PlayerActivity.showCommentsPanel() {
 }
 
 internal fun PlayerActivity.hideCommentsPanel() {
-    binding.commentsPanel.visibility = View.GONE
     setControlsVisible(true)
-    binding.btnComments.post { binding.btnComments.requestFocus() }
+    // Restore focus before hiding the panel to avoid a brief focus jump to an unrelated control.
+    sidePanelFocusReturn.restoreAndClear(fallback = binding.btnComments, postOnFail = false)
+    binding.commentsPanel.visibility = View.GONE
 }
 
 internal fun PlayerActivity.onSidePanelBackPressed(): Boolean {

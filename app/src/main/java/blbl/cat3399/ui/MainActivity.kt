@@ -28,6 +28,7 @@ import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
+import blbl.cat3399.core.ui.FocusReturn
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.UiScale
@@ -62,7 +63,7 @@ class MainActivity : BaseActivity() {
     private var disclaimerDialog: AlertDialog? = null
     private var crashPromptDialog: AlertDialog? = null
     private lateinit var userInfoOverlay: DialogUserInfoBinding
-    private var userInfoPrevFocus: WeakReference<View>? = null
+    private val userInfoReturnFocus = FocusReturn()
     private var userInfoLoadJob: Job? = null
     private var lastBackAtMs: Long = 0L
 
@@ -309,7 +310,7 @@ class MainActivity : BaseActivity() {
 
     private fun showUserInfoOverlay() {
         if (isUserInfoOverlayVisible()) return
-        userInfoPrevFocus = currentFocus?.let { WeakReference(it) }
+        userInfoReturnFocus.capture(currentFocus)
 
         binding.sidebar.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         binding.mainContainer.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
@@ -332,11 +333,7 @@ class MainActivity : BaseActivity() {
         binding.sidebar.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         binding.mainContainer.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
 
-        val desired = userInfoPrevFocus?.get()
-        userInfoPrevFocus = null
-        if (desired != null && desired.isAttachedToWindow && desired.isShown) {
-            binding.root.post { desired.requestFocus() }
-        }
+        userInfoReturnFocus.restoreAndClear(postOnFail = true)
     }
 
     private fun resetUserInfoUi() {

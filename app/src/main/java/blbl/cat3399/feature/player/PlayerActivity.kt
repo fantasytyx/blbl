@@ -58,6 +58,7 @@ import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
+import blbl.cat3399.core.ui.FocusReturn
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.ui.UiScale
@@ -87,6 +88,7 @@ import kotlin.math.roundToInt
 class PlayerActivity : BaseActivity() {
     internal lateinit var binding: ActivityPlayerBinding
     internal var player: ExoPlayer? = null
+    internal val sidePanelFocusReturn = FocusReturn()
     internal var debugJob: kotlinx.coroutines.Job? = null
     internal val debug = PlayerDebugMetrics()
     internal var progressJob: kotlinx.coroutines.Job? = null
