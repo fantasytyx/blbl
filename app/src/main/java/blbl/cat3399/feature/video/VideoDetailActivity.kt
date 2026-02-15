@@ -30,6 +30,9 @@ import blbl.cat3399.feature.my.BangumiDetailActivity
 import blbl.cat3399.feature.player.PlayerActivity
 import blbl.cat3399.feature.player.PlayerPlaylistItem
 import blbl.cat3399.feature.player.PlayerPlaylistStore
+import blbl.cat3399.feature.player.parseMultiPagePlaylistFromViewWithUiCards
+import blbl.cat3399.feature.player.parseUgcSeasonPlaylistFromArchivesListWithUiCards
+import blbl.cat3399.feature.player.parseUgcSeasonPlaylistFromViewWithUiCards
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -62,8 +65,10 @@ class VideoDetailActivity : BaseActivity() {
     private var playlistIndex: Int? = null
 
     private var currentParts: List<PlayerPlaylistItem> = emptyList()
+    private var currentPartsUiCards: List<blbl.cat3399.core.model.VideoCard> = emptyList()
     private var currentUgcSeasonTitle: String? = null
     private var currentUgcSeasonItems: List<PlayerPlaylistItem> = emptyList()
+    private var currentUgcSeasonUiCards: List<blbl.cat3399.core.model.VideoCard> = emptyList()
     private var currentUgcSeasonIndex: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -329,16 +334,22 @@ class VideoDetailActivity : BaseActivity() {
                     ownerName = owner?.optString("name", "")?.trim()?.takeIf { it.isNotBlank() } ?: ownerName
                     ownerAvatar = owner?.optString("face", "")?.trim()?.takeIf { it.isNotBlank() } ?: ownerAvatar
 
-                    currentParts = parseMultiPagePlaylistFromView(viewData, bvid = resolvedBvid, aid = resolvedAid)
+                    run {
+                        val parsed = parseMultiPagePlaylistFromViewWithUiCards(viewData, bvid = resolvedBvid, aid = resolvedAid)
+                        currentParts = parsed.items
+                        currentPartsUiCards = parsed.uiCards
+                    }
 
                     val ugcSeason = viewData.optJSONObject("ugc_season")
                     currentUgcSeasonTitle = ugcSeason?.optString("title", "")?.trim()?.takeIf { it.isNotBlank() }
                     currentUgcSeasonItems = emptyList()
+                    currentUgcSeasonUiCards = emptyList()
                     currentUgcSeasonIndex = null
                     if (ugcSeason != null) {
-                        val itemsFromView = parseUgcSeasonPlaylistFromView(ugcSeason)
-                        if (itemsFromView.isNotEmpty()) {
-                            currentUgcSeasonItems = itemsFromView
+                        val parsedFromView = parseUgcSeasonPlaylistFromViewWithUiCards(ugcSeason)
+                        if (parsedFromView.items.isNotEmpty()) {
+                            currentUgcSeasonItems = parsedFromView.items
+                            currentUgcSeasonUiCards = parsedFromView.uiCards
                         } else {
                             val seasonId = ugcSeason.optLong("id").takeIf { it > 0L }
                             val mid =
@@ -349,7 +360,11 @@ class VideoDetailActivity : BaseActivity() {
                                     withContext(Dispatchers.IO) {
                                         runCatching { BiliApi.seasonsArchivesList(mid = mid, seasonId = seasonId, pageSize = 200) }.getOrNull()
                                     }
-                                if (json != null) currentUgcSeasonItems = parseUgcSeasonPlaylistFromArchivesList(json)
+                                if (json != null) {
+                                    val parsedFromApi = parseUgcSeasonPlaylistFromArchivesListWithUiCards(json)
+                                    currentUgcSeasonItems = parsedFromApi.items
+                                    currentUgcSeasonUiCards = parsedFromApi.uiCards
+                                }
                             }
                         }
                     }
@@ -506,7 +521,13 @@ class VideoDetailActivity : BaseActivity() {
         val safeBvid = picked.bvid.trim()
         if (safeBvid.isBlank()) return
 
-        val token = PlayerPlaylistStore.put(items = list, index = index, source = "VideoDetail:multi_page:$safeBvid")
+        val token =
+            PlayerPlaylistStore.put(
+                items = list,
+                index = index,
+                source = "VideoDetail:multi_page:$safeBvid",
+                uiCards = currentPartsUiCards,
+            )
         startActivity(
             Intent(this, PlayerActivity::class.java)
                 .putExtra(PlayerActivity.EXTRA_BVID, safeBvid)
@@ -524,7 +545,13 @@ class VideoDetailActivity : BaseActivity() {
         val safeBvid = picked.bvid.trim()
         if (safeBvid.isBlank()) return
 
-        val token = PlayerPlaylistStore.put(items = list, index = index, source = "VideoDetail:ugc_season:$safeBvid")
+        val token =
+            PlayerPlaylistStore.put(
+                items = list,
+                index = index,
+                source = "VideoDetail:ugc_season:$safeBvid",
+                uiCards = currentUgcSeasonUiCards,
+            )
         startActivity(
             Intent(this, PlayerActivity::class.java)
                 .putExtra(PlayerActivity.EXTRA_BVID, safeBvid)

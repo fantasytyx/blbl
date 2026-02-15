@@ -385,12 +385,18 @@ internal suspend fun PlayerActivity.maybeOverridePlaylistWithUgcSeason(viewData:
     val seasonId = ugcSeason.optLong("id").takeIf { it > 0 } ?: return
     val seasonTitle = ugcSeason.optString("title", "").trim().takeIf { it.isNotBlank() }
 
-    fun apply(items: List<PlayerPlaylistItem>, index: Int) {
+    fun apply(parsed: PlaylistParsed, index: Int) {
+        val items = parsed.items
+        val uiCards =
+            parsed.uiCards
+                .takeIf { it.isNotEmpty() && it.size == items.size }
+                ?: emptyList()
         if (items.isEmpty() || index !in items.indices) return
         playlistToken?.let(PlayerPlaylistStore::remove)
         playlistToken = null
         playlistSource = null
         playlistItems = items
+        playlistUiCards = uiCards
         playlistIndex = index
         playlistUgcSeasonId = seasonId
         playlistUgcSeasonTitle = seasonTitle
@@ -400,10 +406,10 @@ internal suspend fun PlayerActivity.maybeOverridePlaylistWithUgcSeason(viewData:
     val aid = currentAid
     val cid = currentCid.takeIf { it > 0 }
 
-    val itemsFromView = parseUgcSeasonPlaylistFromView(ugcSeason)
-    val idxFromView = pickPlaylistIndexForCurrentMedia(itemsFromView, bvid = bvid, aid = aid, cid = cid)
+    val parsedFromView = parseUgcSeasonPlaylistFromViewWithUiCards(ugcSeason)
+    val idxFromView = pickPlaylistIndexForCurrentMedia(parsedFromView.items, bvid = bvid, aid = aid, cid = cid)
     if (idxFromView >= 0) {
-        apply(itemsFromView, idxFromView)
+        apply(parsedFromView, idxFromView)
         return
     }
 
@@ -416,9 +422,9 @@ internal suspend fun PlayerActivity.maybeOverridePlaylistWithUgcSeason(viewData:
         withContext(Dispatchers.IO) {
             runCatching { BiliApi.seasonsArchivesList(mid = mid, seasonId = seasonId, pageSize = 200) }.getOrNull()
         } ?: return
-    val itemsFromApi = parseUgcSeasonPlaylistFromArchivesList(json)
-    val idxFromApi = pickPlaylistIndexForCurrentMedia(itemsFromApi, bvid = bvid, aid = aid, cid = cid)
-    if (idxFromApi >= 0) apply(itemsFromApi, idxFromApi)
+    val parsedFromApi = parseUgcSeasonPlaylistFromArchivesListWithUiCards(json)
+    val idxFromApi = pickPlaylistIndexForCurrentMedia(parsedFromApi.items, bvid = bvid, aid = aid, cid = cid)
+    if (idxFromApi >= 0) apply(parsedFromApi, idxFromApi)
 }
 
 internal fun PlayerActivity.maybeOverridePlaylistWithMultiPage(viewData: JSONObject, bvid: String): Boolean {
@@ -430,22 +436,28 @@ internal fun PlayerActivity.maybeOverridePlaylistWithMultiPage(viewData: JSONObj
     val aid = currentAid ?: viewData.optLong("aid").takeIf { it > 0 }
     val cid = currentCid.takeIf { it > 0 }
 
-    fun apply(items: List<PlayerPlaylistItem>, index: Int): Boolean {
+    fun apply(parsed: PlaylistParsed, index: Int): Boolean {
+        val items = parsed.items
+        val uiCards =
+            parsed.uiCards
+                .takeIf { it.isNotEmpty() && it.size == items.size }
+                ?: emptyList()
         if (items.isEmpty() || index !in items.indices) return false
         playlistToken?.let(PlayerPlaylistStore::remove)
         playlistToken = null
         playlistSource = null
         playlistItems = items
+        playlistUiCards = uiCards
         playlistIndex = index
         updatePlaylistControls()
         return true
     }
 
-    val itemsFromView = parseMultiPagePlaylistFromView(viewData, bvid = bvid, aid = aid)
-    if (itemsFromView.size <= 1) return false
-    val idx = pickPlaylistIndexForCurrentMedia(itemsFromView, bvid = bvid, aid = aid, cid = cid)
-    val safeIndex = if (idx in itemsFromView.indices) idx else 0
-    return apply(itemsFromView, safeIndex)
+    val parsedFromView = parseMultiPagePlaylistFromViewWithUiCards(viewData, bvid = bvid, aid = aid)
+    if (parsedFromView.items.size <= 1) return false
+    val idx = pickPlaylistIndexForCurrentMedia(parsedFromView.items, bvid = bvid, aid = aid, cid = cid)
+    val safeIndex = if (idx in parsedFromView.items.indices) idx else 0
+    return apply(parsedFromView, safeIndex)
 }
 
 internal fun PlayerActivity.handlePlaybackEnded(exo: ExoPlayer) {
