@@ -1,10 +1,10 @@
 package blbl.cat3399.feature.player
 
-import android.widget.Toast
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import java.util.Locale
 import android.util.TypedValue
@@ -56,7 +56,7 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
             (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
         }
 
-        else -> Toast.makeText(this, "暂未实现：${item.title}", Toast.LENGTH_SHORT).show()
+        else -> AppToast.show(this, "暂未实现：${item.title}")
     }
 }
 
@@ -347,7 +347,7 @@ internal fun PlayerActivity.resolveSubtitleLang(code: String): String {
 internal fun PlayerActivity.showSubtitleLangDialog() {
     val exo = player ?: return
     if (subtitleItems.isEmpty()) {
-        Toast.makeText(this, "该视频暂无字幕", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "该视频暂无字幕")
         return
     }
     val autoLabel = "自动（取第一个）"

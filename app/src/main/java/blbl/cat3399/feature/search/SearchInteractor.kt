@@ -1,7 +1,6 @@
 package blbl.cat3399.feature.search
 
 import android.os.SystemClock
-import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
@@ -9,6 +8,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.paging.PagedGridStateMachine
 import blbl.cat3399.core.paging.appliedOrNull
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -365,7 +365,7 @@ class SearchInteractor(
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("Search", "load failed tab=${tabAtStart.name} page=$startPage", t)
-                fragment.context?.let { Toast.makeText(it, "搜索失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
+                fragment.context?.let { AppToast.show(it, "搜索失败，可查看 Logcat(标签 BLBL)") }
             } finally {
                 val stillSameRefresh = isRefresh && state.refreshUiToken == refreshToken
                 val stillSameGen = paging.snapshot().generation == startGen

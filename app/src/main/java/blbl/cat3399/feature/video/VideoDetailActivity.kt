@@ -7,7 +7,6 @@ import android.view.KeyEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ProgressBar
-import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ConcatAdapter
 import androidx.recyclerview.widget.GridLayoutManager
@@ -18,6 +17,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.ActivityStackLimiter
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.GridSpanPolicy
@@ -83,7 +83,7 @@ class VideoDetailActivity : BaseActivity() {
         ownerMid = intent.getLongExtra(EXTRA_OWNER_MID, -1L).takeIf { it > 0L }
 
         if (bvid.isBlank() && aid == null) {
-            Toast.makeText(this, "缺少 bvid/aid", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "缺少 bvid/aid")
             finish()
             return
         }
@@ -123,7 +123,7 @@ class VideoDetailActivity : BaseActivity() {
                 load(prefetchedViewData = viewData)
             } catch (t: Throwable) {
                 if (t is CancellationException) return@launch
-                Toast.makeText(this@VideoDetailActivity, t.message ?: "加载失败", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@VideoDetailActivity, t.message ?: "加载失败")
                 finish()
             }
         }
@@ -382,7 +382,7 @@ class VideoDetailActivity : BaseActivity() {
                 } catch (t: Throwable) {
                     if (t is CancellationException) return@launch
                     AppLog.e("VideoDetail", "load failed bvid=$bvid aid=$aid", t)
-                    Toast.makeText(this@VideoDetailActivity, t.message ?: "加载失败", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@VideoDetailActivity, t.message ?: "加载失败")
                 } finally {
                     if (codeToken == requestToken) binding.swipeRefresh.isRefreshing = false
                 }
@@ -485,7 +485,7 @@ class VideoDetailActivity : BaseActivity() {
     private fun playCurrentFromHeader() {
         val safeBvid = bvid.trim()
         if (safeBvid.isBlank() && aid == null) {
-            Toast.makeText(this, "缺少 bvid", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "缺少 bvid")
             return
         }
 
@@ -538,7 +538,7 @@ class VideoDetailActivity : BaseActivity() {
     private fun openUpDetail() {
         val mid = ownerMid?.takeIf { it > 0L }
         if (mid == null) {
-            Toast.makeText(this, "未获取到 UP 主信息", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "未获取到 UP 主信息")
             return
         }
         startActivity(

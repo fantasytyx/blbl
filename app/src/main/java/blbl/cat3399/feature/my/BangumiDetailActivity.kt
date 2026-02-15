@@ -3,8 +3,8 @@ package blbl.cat3399.feature.my
 import android.os.Bundle
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.Toast
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.Immersive
 
@@ -26,7 +26,7 @@ class BangumiDetailActivity : BaseActivity() {
         val continueEpIndex = intent.getIntExtra(EXTRA_CONTINUE_EP_INDEX, -1).takeIf { it > 0 }
 
         if (seasonId == null && epId == null) {
-            Toast.makeText(this, "缺少 seasonId/epId", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "缺少 seasonId/epId")
             finish()
             return
         }
@@ -74,4 +74,3 @@ class BangumiDetailActivity : BaseActivity() {
         const val EXTRA_CONTINUE_EP_INDEX: String = "continue_ep_index"
     }
 }
-

@@ -6,7 +6,6 @@ import android.view.KeyEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import android.content.Intent
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -18,6 +17,7 @@ import blbl.cat3399.core.image.ImageUrl
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.BangumiEpisode
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
@@ -108,14 +108,14 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
         binding.btnPrimary.setOnClickListener {
             val ep = continueEpisode ?: currentEpisodes.firstOrNull()
             if (ep == null) {
-                Toast.makeText(requireContext(), "暂无可播放剧集", Toast.LENGTH_SHORT).show()
+                AppToast.show(requireContext(), "暂无可播放剧集")
                 return@setOnClickListener
             }
             val pos = currentEpisodes.indexOfFirst { it.epId == ep.epId }.takeIf { it >= 0 } ?: 0
             playEpisode(ep, pos)
         }
         binding.btnSecondary.setOnClickListener {
-            Toast.makeText(requireContext(), "暂不支持操作", Toast.LENGTH_SHORT).show()
+            AppToast.show(requireContext(), "暂不支持操作")
         }
     }
 
@@ -265,7 +265,7 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("MyBangumiDetail", "load failed seasonId=${seasonIdArg ?: -1L} epId=${epIdArg ?: -1L}", t)
-                context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
+                context?.let { AppToast.show(it, "加载失败，可查看 Logcat(标签 BLBL)") }
             }
         }
     }
@@ -535,13 +535,13 @@ class MyBangumiDetailFragment : Fragment(), RefreshKeyHandler {
     private fun playEpisode(ep: BangumiEpisode, pos: Int) {
         val seasonId = resolvedSeasonId ?: seasonIdArg
         if (seasonId == null || seasonId <= 0L) {
-            Toast.makeText(requireContext(), "缺少 seasonId", Toast.LENGTH_SHORT).show()
+            AppToast.show(requireContext(), "缺少 seasonId")
             return
         }
         val bvid = ep.bvid.orEmpty()
         val cid = ep.cid ?: -1L
         if (bvid.isBlank() || cid <= 0) {
-            Toast.makeText(requireContext(), "缺少播放信息（bvid/cid）", Toast.LENGTH_SHORT).show()
+            AppToast.show(requireContext(), "缺少播放信息（bvid/cid）")
             return
         }
         val allItems =

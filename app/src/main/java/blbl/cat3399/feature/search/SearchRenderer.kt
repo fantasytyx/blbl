@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -18,6 +17,7 @@ import androidx.recyclerview.widget.StaggeredGridLayoutManager
 import blbl.cat3399.R
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.paging.PagedGridStateMachine
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
@@ -76,7 +76,7 @@ class SearchRenderer(
     val liveAdapter: LiveRoomAdapter =
         LiveRoomAdapter { _, room ->
             if (!room.isLive) {
-                Toast.makeText(viewContext, "未开播", Toast.LENGTH_SHORT).show()
+                AppToast.show(viewContext, "未开播")
                 return@LiveRoomAdapter
             }
             fragment.startActivity(

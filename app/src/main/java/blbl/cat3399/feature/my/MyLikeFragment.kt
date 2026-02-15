@@ -5,7 +5,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -14,6 +13,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.UiScale
@@ -223,11 +223,7 @@ class MyLikeFragment : Fragment(), MyTabSwitchFocusTarget, RefreshKeyHandler {
                 val isPrivate = (t as? BiliApiException)?.apiCode == 53013
                 if (isPrivate && token == requestToken) adapter.submit(emptyList())
                 context?.let {
-                    Toast.makeText(
-                        it,
-                        if (isPrivate) "点赞列表未公开" else "加载失败，可查看 Logcat(标签 BLBL)",
-                        Toast.LENGTH_SHORT,
-                    ).show()
+                    AppToast.show(it, if (isPrivate) "点赞列表未公开" else "加载失败，可查看 Logcat(标签 BLBL)")
                 }
             } finally {
                 if (token == requestToken) _binding?.swipeRefresh?.isRefreshing = false

@@ -5,7 +5,6 @@ import android.content.Intent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.FragmentManager
 import androidx.lifecycle.lifecycleScope
@@ -17,6 +16,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.image.ImageLoader
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.databinding.DialogUserInfoBinding
 import blbl.cat3399.feature.following.FollowingListActivity
 import kotlinx.coroutines.launch
@@ -49,7 +49,7 @@ class UserInfoDialogFragment : DialogFragment() {
             startActivity(Intent(requireContext(), FollowingListActivity::class.java))
         }
         binding.btnFollower.setOnClickListener {
-            Toast.makeText(requireContext(), "粉丝列表未实现", Toast.LENGTH_SHORT).show()
+            AppToast.show(requireContext(), "粉丝列表未实现")
         }
 
         binding.tvName.text = ""

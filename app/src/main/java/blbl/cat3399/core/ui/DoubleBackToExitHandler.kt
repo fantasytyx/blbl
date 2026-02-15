@@ -2,7 +2,6 @@ package blbl.cat3399.core.ui
 
 import android.content.Context
 import android.os.SystemClock
-import android.widget.Toast
 
 internal class DoubleBackToExitHandler(
     private val context: Context,
@@ -18,9 +17,8 @@ internal class DoubleBackToExitHandler(
         val isSecond = now - lastBackAtMs <= windowMs
         if (isSecond) return true
         lastBackAtMs = now
-        Toast.makeText(context, hintText, Toast.LENGTH_SHORT).show()
+        AppToast.show(context, hintText)
         onFirstBack()
         return false
     }
 }
-
