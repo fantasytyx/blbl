@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
-import android.widget.Toast
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -18,6 +17,7 @@ import blbl.cat3399.core.paging.PagedGridStateMachine
 import blbl.cat3399.core.paging.appliedOrNull
 import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.BackButtonSizingHelper
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.Immersive
@@ -148,7 +148,7 @@ class FollowingListActivity : BaseActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && RemoteKeys.isRefreshKey(event.keyCode)) {
             if (binding.loginContainer.isVisible) {
-                Toast.makeText(this, "请先登录", Toast.LENGTH_SHORT).show()
+                AppToast.show(this, "请先登录")
                 binding.btnLogin.requestFocus()
                 return true
             }
@@ -266,7 +266,7 @@ class FollowingListActivity : BaseActivity() {
                 val fetched = latestFetched ?: return@launch
                 total = fetched.total
                 if (fetched.items.isEmpty()) {
-                    if (applied.isRefresh) Toast.makeText(this@FollowingListActivity, "暂无关注", Toast.LENGTH_SHORT).show()
+                    if (applied.isRefresh) AppToast.show(this@FollowingListActivity, "暂无关注")
                     return@launch
                 }
                 applied.items.forEach { loadedMids.add(it.mid) }
@@ -275,7 +275,7 @@ class FollowingListActivity : BaseActivity() {
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("FollowingList", "load failed page=$startPage", t)
-                Toast.makeText(this@FollowingListActivity, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@FollowingListActivity, "加载失败，可查看 Logcat(标签 BLBL)")
             } finally {
                 if (paging.snapshot().generation == startGen) binding.swipeRefresh.isRefreshing = false
             }
@@ -292,7 +292,7 @@ class FollowingListActivity : BaseActivity() {
             if (!isLogin || mid <= 0) {
                 forceLoginUi = true
                 refreshLoginUi()
-                Toast.makeText(this, "登录态失效，请重新登录", Toast.LENGTH_SHORT).show()
+                AppToast.show(this, "登录态失效，请重新登录")
                 null
             } else {
                 vmid = mid

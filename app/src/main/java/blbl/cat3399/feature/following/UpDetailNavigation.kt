@@ -1,12 +1,12 @@
 package blbl.cat3399.feature.following
 
 import android.content.Intent
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.model.VideoCard
+import blbl.cat3399.core.ui.AppToast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -19,7 +19,7 @@ fun Fragment.openUpDetailFromVideoCard(card: VideoCard) {
 
     val safeAid = card.aid?.takeIf { it > 0L }
     if (card.bvid.isBlank() && safeAid == null) {
-        context?.let { Toast.makeText(it, "未获取到 UP 主信息", Toast.LENGTH_SHORT).show() }
+        context?.let { AppToast.show(it, "未获取到 UP 主信息") }
         return
     }
 
@@ -34,14 +34,14 @@ fun Fragment.openUpDetailFromVideoCard(card: VideoCard) {
             val owner = json.optJSONObject("data")?.optJSONObject("owner")
             val viewMid = owner?.optLong("mid") ?: 0L
             if (viewMid <= 0L) {
-                context?.let { Toast.makeText(it, "未获取到 UP 主信息", Toast.LENGTH_SHORT).show() }
+                context?.let { AppToast.show(it, "未获取到 UP 主信息") }
                 return@launch
             }
             startUpDetail(mid = viewMid, card = card)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            context?.let { Toast.makeText(it, "未获取到 UP 主信息", Toast.LENGTH_SHORT).show() }
+            context?.let { AppToast.show(it, "未获取到 UP 主信息") }
         }
     }
 }

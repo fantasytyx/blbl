@@ -1,7 +1,6 @@
 package blbl.cat3399.feature.player
 
 import android.view.View
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -9,6 +8,7 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.postIfAlive
 import kotlinx.coroutines.CancellationException
@@ -49,7 +49,7 @@ internal fun PlayerActivity.initSidePanels() {
                 if (!isCommentsPanelVisible()) return@PlayerCommentsAdapter
                 if (isCommentThreadVisible()) return@PlayerCommentsAdapter
                 if (item.replyCount <= 0) {
-                    Toast.makeText(this, "暂无更多回复", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this, "暂无更多回复")
                     return@PlayerCommentsAdapter
                 }
                 openCommentThread(rootRpid = item.rpid)
@@ -347,7 +347,7 @@ internal fun PlayerActivity.ensureCommentsLoaded() {
 internal fun PlayerActivity.reloadComments() {
     val aid = currentAid?.takeIf { it > 0L }
     if (aid == null) {
-        Toast.makeText(this, getString(R.string.player_comment_no_aid), Toast.LENGTH_SHORT).show()
+        AppToast.show(this, getString(R.string.player_comment_no_aid))
         return
     }
 
@@ -411,7 +411,7 @@ internal fun PlayerActivity.reloadComments() {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: getString(R.string.player_comment_load_failed))
-                Toast.makeText(this@reloadComments, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@reloadComments, msg)
                 if (commentsItems.isEmpty()) {
                     binding.tvCommentsHint.text = getString(R.string.player_comment_load_failed)
                     binding.tvCommentsHint.visibility = View.VISIBLE
@@ -474,7 +474,7 @@ internal fun PlayerActivity.loadMoreComments() {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: getString(R.string.player_comment_load_failed))
-                Toast.makeText(this@loadMoreComments, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@loadMoreComments, msg)
             } finally {
                 if (token == commentsFetchToken) commentsFetchJob = null
             }
@@ -560,7 +560,7 @@ internal fun PlayerActivity.reloadCommentThread() {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: getString(R.string.player_comment_load_failed))
-                Toast.makeText(this@reloadCommentThread, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@reloadCommentThread, msg)
                 if (commentThreadItems.isEmpty()) {
                     binding.tvCommentsHint.text = getString(R.string.player_comment_load_failed)
                     binding.tvCommentsHint.visibility = View.VISIBLE
@@ -627,7 +627,7 @@ internal fun PlayerActivity.loadMoreCommentThread() {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: getString(R.string.player_comment_load_failed))
-                Toast.makeText(this@loadMoreCommentThread, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@loadMoreCommentThread, msg)
             } finally {
                 if (token == commentThreadFetchToken) commentThreadFetchJob = null
             }

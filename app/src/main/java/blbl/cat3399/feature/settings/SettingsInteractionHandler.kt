@@ -12,7 +12,6 @@ import android.provider.Settings
 import android.text.InputType
 import android.widget.EditText
 import android.widget.TextView
-import android.widget.Toast
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.lifecycleScope
@@ -20,6 +19,7 @@ import blbl.cat3399.BuildConfig
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.log.LogExporter
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import blbl.cat3399.core.update.TestApkUpdater
@@ -68,7 +68,7 @@ class SettingsInteractionHandler(
         val prefs = BiliClient.prefs
         prefs.gaiaVgateVVoucher = null
         prefs.gaiaVgateVVoucherSavedAtMs = -1L
-        Toast.makeText(activity, "验证成功，已写入风控票据", Toast.LENGTH_SHORT).show()
+        AppToast.show(activity, "验证成功，已写入风控票据")
         renderer.refreshSection(SettingId.GaiaVgate)
     }
 
@@ -81,21 +81,17 @@ class SettingsInteractionHandler(
         exportLogsJob?.cancel()
         exportLogsJob =
             activity.lifecycleScope.launch {
-                Toast.makeText(activity, "正在导出日志…", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "正在导出日志…")
                 runCatching {
                     withContext(Dispatchers.IO) {
                         LogExporter.exportToTreeUri(activity, uri)
                     }
                 }.onSuccess { result ->
-                    Toast.makeText(
-                        activity,
-                        "已导出：${result.fileName}（${result.includedFiles}个文件）",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    AppToast.showLong(activity, "已导出：${result.fileName}（${result.includedFiles}个文件）")
                 }.onFailure { t ->
                     AppLog.w("Settings", "export logs failed", t)
                     val msg = t.message?.takeIf { it.isNotBlank() } ?: "未知错误"
-                    Toast.makeText(activity, "导出失败：$msg", Toast.LENGTH_LONG).show()
+                    AppToast.showLong(activity, "导出失败：$msg")
                 }
             }
     }
@@ -104,22 +100,18 @@ class SettingsInteractionHandler(
         exportLogsJob?.cancel()
         exportLogsJob =
             activity.lifecycleScope.launch {
-                Toast.makeText(activity, "正在导出日志到本地…", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "正在导出日志到本地…")
                 runCatching {
                     withContext(Dispatchers.IO) {
                         LogExporter.exportToLocalFile(activity)
                     }
                 }.onSuccess { result ->
                     val path = result.file.absolutePath
-                    Toast.makeText(
-                        activity,
-                        "无法选择文件夹，已导出到本地：${result.fileName}（${result.includedFiles}个文件）\n路径：$path",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    AppToast.showLong(activity, "无法选择文件夹，已导出到本地：${result.fileName}（${result.includedFiles}个文件）\n路径：$path")
                 }.onFailure { t ->
                     AppLog.w("Settings", "export logs (local) failed", t)
                     val msg = t.message?.takeIf { it.isNotBlank() } ?: "未知错误"
-                    Toast.makeText(activity, "导出失败：$msg", Toast.LENGTH_LONG).show()
+                    AppToast.showLong(activity, "导出失败：$msg")
                 }
             }
     }
@@ -141,7 +133,7 @@ class SettingsInteractionHandler(
                         else -> "small"
                     }
                 prefs.imageQuality = next
-                Toast.makeText(activity, "图片质量：$next", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "图片质量：$next")
                 renderer.refreshSection(entry.id)
             }
 
@@ -168,13 +160,13 @@ class SettingsInteractionHandler(
             SettingId.FullscreenEnabled -> {
                 prefs.fullscreenEnabled = !prefs.fullscreenEnabled
                 Immersive.apply(activity, prefs.fullscreenEnabled)
-                Toast.makeText(activity, "全屏：${if (prefs.fullscreenEnabled) "开" else "关"}", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "全屏：${if (prefs.fullscreenEnabled) "开" else "关"}")
                 renderer.refreshSection(entry.id)
             }
 
             SettingId.TabSwitchFollowsFocus -> {
                 prefs.tabSwitchFollowsFocus = !prefs.tabSwitchFollowsFocus
-                Toast.makeText(activity, "tab跟随焦点切换：${if (prefs.tabSwitchFollowsFocus) "开" else "关"}", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "tab跟随焦点切换：${if (prefs.tabSwitchFollowsFocus) "开" else "关"}")
                 renderer.refreshSection(entry.id)
             }
 
@@ -196,7 +188,7 @@ class SettingsInteractionHandler(
                         options.firstOrNull { it.second == selected }?.first
                             ?: blbl.cat3399.core.prefs.AppPrefs.STARTUP_PAGE_HOME
                     prefs.startupPage = key
-                    Toast.makeText(activity, "启动默认页：$selected（下次启动生效）", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "启动默认页：$selected（下次启动生效）")
                     renderer.refreshSection(entry.id)
                 }
             }
@@ -214,7 +206,7 @@ class SettingsInteractionHandler(
                             "大" -> blbl.cat3399.core.prefs.AppPrefs.SIDEBAR_SIZE_LARGE
                             else -> blbl.cat3399.core.prefs.AppPrefs.SIDEBAR_SIZE_MEDIUM
                         }
-                    Toast.makeText(activity, "界面大小：$selected", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "界面大小：$selected")
                     renderer.refreshSection(entry.id)
                 }
             }
@@ -227,7 +219,7 @@ class SettingsInteractionHandler(
                     current = SettingsText.gridSpanText(prefs.gridSpanCount),
                 ) { selected ->
                     prefs.gridSpanCount = (selected.toIntOrNull() ?: 4).coerceIn(1, 6)
-                    Toast.makeText(activity, "每行卡片：${SettingsText.gridSpanText(prefs.gridSpanCount)}", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "每行卡片：${SettingsText.gridSpanText(prefs.gridSpanCount)}")
                     renderer.refreshSection(entry.id)
                 }
             }
@@ -240,7 +232,7 @@ class SettingsInteractionHandler(
                     current = SettingsText.gridSpanText(prefs.dynamicGridSpanCount),
                 ) { selected ->
                     prefs.dynamicGridSpanCount = (selected.toIntOrNull() ?: 3).coerceIn(1, 6)
-                    Toast.makeText(activity, "动态每行：${SettingsText.gridSpanText(prefs.dynamicGridSpanCount)}", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "动态每行：${SettingsText.gridSpanText(prefs.dynamicGridSpanCount)}")
                     renderer.refreshSection(entry.id)
                 }
             }
@@ -253,20 +245,20 @@ class SettingsInteractionHandler(
                     current = SettingsText.gridSpanText(prefs.pgcGridSpanCount),
                 ) { selected ->
                     prefs.pgcGridSpanCount = (selected.toIntOrNull() ?: 6).coerceIn(1, 6)
-                    Toast.makeText(activity, "番剧每行：${SettingsText.gridSpanText(prefs.pgcGridSpanCount)}", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "番剧每行：${SettingsText.gridSpanText(prefs.pgcGridSpanCount)}")
                     renderer.refreshSection(entry.id)
                 }
             }
 
             SettingId.DanmakuEnabled -> {
                 prefs.danmakuEnabled = !prefs.danmakuEnabled
-                Toast.makeText(activity, "弹幕：${if (prefs.danmakuEnabled) "开" else "关"}", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "弹幕：${if (prefs.danmakuEnabled) "开" else "关"}")
                 renderer.refreshSection(entry.id)
             }
 
             SettingId.SubtitleEnabledDefault -> {
                 prefs.subtitleEnabledDefault = !prefs.subtitleEnabledDefault
-                Toast.makeText(activity, "默认字幕：${if (prefs.subtitleEnabledDefault) "开" else "关"}", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "默认字幕：${if (prefs.subtitleEnabledDefault) "开" else "关"}")
                 renderer.refreshSection(entry.id)
             }
 
@@ -623,7 +615,7 @@ class SettingsInteractionHandler(
             SettingId.CheckUpdate -> {
                 when (val checkState = state.testUpdateCheckState) {
                     TestUpdateCheckState.Checking -> {
-                        Toast.makeText(activity, "正在检查更新…", Toast.LENGTH_SHORT).show()
+                        AppToast.show(activity, "正在检查更新…")
                     }
 
                     is TestUpdateCheckState.UpdateAvailable -> {
@@ -708,16 +700,16 @@ class SettingsInteractionHandler(
             .setPositiveButton("保存") { _, _ ->
                 val ua = input.text?.toString().orEmpty().trim()
                 if (ua.isBlank()) {
-                    Toast.makeText(activity, "User-Agent 不能为空", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "User-Agent 不能为空")
                     return@setPositiveButton
                 }
                 prefs.userAgent = ua
-                Toast.makeText(activity, "已更新 User-Agent", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "已更新 User-Agent")
                 renderer.showSection(sectionIndex, focusId = focusId)
             }
             .setNeutralButton("重置默认") { _, _ ->
                 prefs.userAgent = blbl.cat3399.core.prefs.AppPrefs.DEFAULT_UA
-                Toast.makeText(activity, "已重置 User-Agent", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "已重置 User-Agent")
                 renderer.showSection(sectionIndex, focusId = focusId)
             }
             .setNegativeButton("取消", null)
@@ -735,7 +727,7 @@ class SettingsInteractionHandler(
                 BiliClient.prefs.biliTicketCheckedEpochDay = -1L
                 BiliClient.prefs.gaiaVgateVVoucher = null
                 BiliClient.prefs.gaiaVgateVVoucherSavedAtMs = -1L
-                Toast.makeText(activity, "已清除 Cookie", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "已清除 Cookie")
                 renderer.showSection(sectionIndex, focusId = focusId)
             }
             .setNegativeButton("取消", null)
@@ -744,11 +736,11 @@ class SettingsInteractionHandler(
 
     private fun showClearCacheDialog(sectionIndex: Int, focusId: SettingId) {
         if (clearCacheJob?.isActive == true) {
-            Toast.makeText(activity, "清理中…", Toast.LENGTH_SHORT).show()
+            AppToast.show(activity, "清理中…")
             return
         }
         if (testUpdateJob?.isActive == true) {
-            Toast.makeText(activity, "下载中，稍后再试", Toast.LENGTH_SHORT).show()
+            AppToast.show(activity, "下载中，稍后再试")
             return
         }
 
@@ -791,17 +783,17 @@ class SettingsInteractionHandler(
                     }
 
                     dialog.dismiss()
-                    Toast.makeText(activity, "已清理缓存", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "已清理缓存")
                     state.cacheSizeBytes = 0L
                     renderer.showSection(sectionIndex, focusId = focusId)
                     updateCacheSize(force = true)
                 } catch (_: CancellationException) {
                     dialog.dismiss()
-                    Toast.makeText(activity, "已取消", Toast.LENGTH_SHORT).show()
+                    AppToast.show(activity, "已取消")
                 } catch (t: Throwable) {
                     AppLog.w("Settings", "clear cache failed: ${t.message}", t)
                     dialog.dismiss()
-                    Toast.makeText(activity, "清理失败", Toast.LENGTH_LONG).show()
+                    AppToast.showLong(activity, "清理失败")
                 }
             }
     }
@@ -884,7 +876,7 @@ class SettingsInteractionHandler(
 
     private fun startTestUpdateDownload(latestVersionHint: String? = null) {
         if (testUpdateJob?.isActive == true) {
-            Toast.makeText(activity, "正在下载更新…", Toast.LENGTH_SHORT).show()
+            AppToast.show(activity, "正在下载更新…")
             return
         }
 
@@ -899,7 +891,7 @@ class SettingsInteractionHandler(
                                 .setData(Uri.parse("package:${activity.packageName}"))
                         activity.startActivity(intent)
                     }.onFailure {
-                        Toast.makeText(activity, "无法打开系统设置", Toast.LENGTH_SHORT).show()
+                        AppToast.show(activity, "无法打开系统设置")
                     }
                 }
                 .setNegativeButton("取消", null)
@@ -910,7 +902,7 @@ class SettingsInteractionHandler(
         val now = System.currentTimeMillis()
         val cooldownLeftMs = TestApkUpdater.cooldownLeftMs(now)
         if (cooldownLeftMs > 0) {
-            Toast.makeText(activity, "操作太频繁，请稍后再试（${(cooldownLeftMs / 1000).coerceAtLeast(1)}s）", Toast.LENGTH_SHORT).show()
+            AppToast.show(activity, "操作太频繁，请稍后再试（${(cooldownLeftMs / 1000).coerceAtLeast(1)}s）")
             return
         }
 
@@ -940,7 +932,7 @@ class SettingsInteractionHandler(
                         renderer.refreshAboutSectionKeepPosition()
                         activity.runOnUiThread {
                             dialog.dismiss()
-                            Toast.makeText(activity, "已是最新版（当前：$currentVersion）", Toast.LENGTH_SHORT).show()
+                            AppToast.show(activity, "已是最新版（当前：$currentVersion）")
                         }
                         return@launch
                     }
@@ -990,13 +982,13 @@ class SettingsInteractionHandler(
                 } catch (_: CancellationException) {
                     activity.runOnUiThread {
                         dialog.dismiss()
-                        Toast.makeText(activity, "已取消更新", Toast.LENGTH_SHORT).show()
+                        AppToast.show(activity, "已取消更新")
                     }
                 } catch (t: Throwable) {
                     AppLog.w("TestUpdate", "update failed: ${t.message}")
                     activity.runOnUiThread {
                         dialog.dismiss()
-                        Toast.makeText(activity, "更新失败：${t.message ?: "未知错误"}", Toast.LENGTH_LONG).show()
+                        AppToast.showLong(activity, "更新失败：${t.message ?: "未知错误"}")
                     }
                 }
             }
@@ -1018,18 +1010,18 @@ class SettingsInteractionHandler(
         runCatching {
             activity.startActivity(Intent(Intent.ACTION_VIEW).setData(Uri.parse(url)))
         }.onFailure {
-            Toast.makeText(activity, "无法打开链接", Toast.LENGTH_SHORT).show()
+            AppToast.show(activity, "无法打开链接")
         }
     }
 
     private fun copyToClipboard(label: String, text: String, toastText: String? = null) {
         val clipboard = activity.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         if (clipboard == null) {
-            Toast.makeText(activity, "无法访问剪贴板", Toast.LENGTH_SHORT).show()
+            AppToast.show(activity, "无法访问剪贴板")
             return
         }
         clipboard.setPrimaryClip(ClipData.newPlainText(label, text))
-        Toast.makeText(activity, toastText ?: "已复制：$text", Toast.LENGTH_SHORT).show()
+        AppToast.show(activity, toastText ?: "已复制：$text")
     }
 
     private fun upsertGaiaVtokenCookie(token: String) {
@@ -1112,13 +1104,13 @@ class SettingsInteractionHandler(
                 val v = input.text?.toString().orEmpty().trim()
                 prefs.gaiaVgateVVoucher = v.takeIf { it.isNotBlank() }
                 prefs.gaiaVgateVVoucherSavedAtMs = if (v.isNotBlank()) System.currentTimeMillis() else -1L
-                Toast.makeText(activity, if (v.isNotBlank()) "已保存 v_voucher" else "已清除 v_voucher", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, if (v.isNotBlank()) "已保存 v_voucher" else "已清除 v_voucher")
                 renderer.showSection(sectionIndex, focusId = focusId)
             }
             .setNeutralButton("清除") { _, _ ->
                 prefs.gaiaVgateVVoucher = null
                 prefs.gaiaVgateVVoucherSavedAtMs = -1L
-                Toast.makeText(activity, "已清除 v_voucher", Toast.LENGTH_SHORT).show()
+                AppToast.show(activity, "已清除 v_voucher")
                 renderer.showSection(sectionIndex, focusId = focusId)
             }
             .setNegativeButton("取消", null)

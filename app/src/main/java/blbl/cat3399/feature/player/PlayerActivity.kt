@@ -16,7 +16,6 @@ import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup.MarginLayoutParams
 import android.widget.SeekBar
-import android.widget.Toast
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -55,6 +54,7 @@ import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.ActivityStackLimiter
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
@@ -614,7 +614,7 @@ class PlayerActivity : BaseActivity() {
         currentEpId = epIdExtra
         currentAid = aidExtra
         if (currentBvid.isBlank() && currentAid == null) {
-            Toast.makeText(this, "缺少 bvid/aid", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "缺少 bvid/aid")
             finish()
             return
         }
@@ -673,12 +673,12 @@ class PlayerActivity : BaseActivity() {
                     if (nextConstraints != null) {
                         decodeFallbackAttempted = true
                         playbackConstraints = nextConstraints
-                        Toast.makeText(this@PlayerActivity, "杜比/无损解码失败，尝试回退到普通轨道…", Toast.LENGTH_SHORT).show()
+                        AppToast.show(this@PlayerActivity, "杜比/无损解码失败，尝试回退到普通轨道…")
                         reloadStream(keepPosition = true, resetConstraints = false)
                         return
                     }
                 }
-                Toast.makeText(this@PlayerActivity, "播放失败：${error.errorCodeName}", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@PlayerActivity, "播放失败：${error.errorCodeName}")
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -813,7 +813,7 @@ class PlayerActivity : BaseActivity() {
         val uncaughtHandler =
             CoroutineExceptionHandler { _, t ->
                 AppLog.e("Player", "uncaught", t)
-                Toast.makeText(this@PlayerActivity, "播放失败：${t.message}", Toast.LENGTH_LONG).show()
+                AppToast.showLong(this@PlayerActivity, "播放失败：${t.message}")
                 finish()
             }
         playbackUncaughtHandler = uncaughtHandler
@@ -1553,7 +1553,7 @@ class PlayerActivity : BaseActivity() {
         binding.btnUp.setOnClickListener {
             val mid = currentUpMid
             if (mid <= 0L) {
-                Toast.makeText(this, "未获取到 UP 主信息", Toast.LENGTH_SHORT).show()
+                AppToast.show(this, "未获取到 UP 主信息")
                 return@setOnClickListener
             }
             // When jumping into the UP video list and potentially starting another PlayerActivity,
@@ -1803,11 +1803,11 @@ class PlayerActivity : BaseActivity() {
 
     private fun toggleSubtitles(exo: ExoPlayer) {
         if (!subtitleAvailabilityKnown) {
-            Toast.makeText(this, "字幕信息加载中", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "字幕信息加载中")
             return
         }
         if (!subtitleAvailable) {
-            Toast.makeText(this, "该视频暂无字幕", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "该视频暂无字幕")
             return
         }
         session = session.copy(subtitleEnabled = !session.subtitleEnabled)
@@ -1846,7 +1846,7 @@ class PlayerActivity : BaseActivity() {
         resumeExpiredUrlReloadAttempted = true
         resumeExpiredUrlReloadArmed = false
         trace?.log("exo:resumeReload", "http=${httpCode ?: -1} type=${error.errorCodeName}")
-        Toast.makeText(this@PlayerActivity, "播放地址已过期，正在刷新…", Toast.LENGTH_SHORT).show()
+        AppToast.show(this@PlayerActivity, "播放地址已过期，正在刷新…")
         reloadStream(keepPosition = true, resetConstraints = false, autoPlay = false)
         return true
     }
@@ -2254,7 +2254,7 @@ class PlayerActivity : BaseActivity() {
             } catch (t: Throwable) {
                 AppLog.e("Player", "reloadStream failed", t)
                 if (!handlePlayUrlErrorIfNeeded(t)) {
-                    Toast.makeText(this@PlayerActivity, "切换失败：${t.message}", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@PlayerActivity, "切换失败：${t.message}")
                 }
             }
         }

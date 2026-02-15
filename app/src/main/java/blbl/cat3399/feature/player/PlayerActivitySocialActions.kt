@@ -1,7 +1,6 @@
 package blbl.cat3399.feature.player
 
 import android.view.View
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.R
@@ -9,6 +8,7 @@ import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.SingleChoiceDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -144,17 +144,17 @@ internal fun PlayerActivity.onLikeButtonClicked() {
                 BiliApi.archiveLike(bvid = requestBvid, aid = currentAid, like = targetLike)
                 if (currentBvid != requestBvid) return@launch
                 actionLiked = targetLike
-                Toast.makeText(this@onLikeButtonClicked, if (targetLike) "点赞成功" else "已取消赞", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@onLikeButtonClicked, if (targetLike) "点赞成功" else "已取消赞")
             } catch (t: Throwable) {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 if (targetLike && e?.apiCode == 65006) {
                     if (currentBvid != requestBvid) return@launch
                     actionLiked = true
-                    Toast.makeText(this@onLikeButtonClicked, "已点赞", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@onLikeButtonClicked, "已点赞")
                 } else {
                     val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "操作失败")
-                    Toast.makeText(this@onLikeButtonClicked, msg, Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@onLikeButtonClicked, msg)
                 }
             } finally {
                 likeActionJob = null
@@ -176,17 +176,17 @@ internal fun PlayerActivity.onCoinButtonClicked() {
                 BiliApi.coinAdd(bvid = requestBvid, aid = currentAid, multiply = 1, selectLike = false)
                 if (currentBvid != requestBvid) return@launch
                 actionCoinCount = (actionCoinCount + 1).coerceAtMost(2)
-                Toast.makeText(this@onCoinButtonClicked, "投币成功", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@onCoinButtonClicked, "投币成功")
             } catch (t: Throwable) {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 if (e?.apiCode == 34005) {
                     if (currentBvid != requestBvid) return@launch
                     actionCoinCount = 2
-                    Toast.makeText(this@onCoinButtonClicked, "已达到投币上限", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@onCoinButtonClicked, "已达到投币上限")
                 } else {
                     val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "操作失败")
-                    Toast.makeText(this@onCoinButtonClicked, msg, Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@onCoinButtonClicked, msg)
                 }
             } finally {
                 coinActionJob = null
@@ -199,12 +199,12 @@ internal fun PlayerActivity.onFavButtonClicked() {
     if (favDialogJob?.isActive == true || favApplyJob?.isActive == true) return
     val selfMid = BiliClient.cookies.getCookieValue("DedeUserID")?.trim()?.toLongOrNull()?.takeIf { it > 0L }
     if (selfMid == null) {
-        Toast.makeText(this, "请先登录后再收藏", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "请先登录后再收藏")
         return
     }
     val aid = currentAid?.takeIf { it > 0L }
     if (aid == null) {
-        Toast.makeText(this, "未获取到 aid，暂不支持收藏", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "未获取到 aid，暂不支持收藏")
         return
     }
 
@@ -222,7 +222,7 @@ internal fun PlayerActivity.onFavButtonClicked() {
                     }
                 if (currentBvid != requestBvid) return@launch
                 if (folders.isEmpty()) {
-                    Toast.makeText(this@onFavButtonClicked, "未获取到收藏夹", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@onFavButtonClicked, "未获取到收藏夹")
                     return@launch
                 }
 
@@ -262,7 +262,7 @@ internal fun PlayerActivity.onFavButtonClicked() {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "加载收藏夹失败")
-                Toast.makeText(this@onFavButtonClicked, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@onFavButtonClicked, msg)
             } finally {
                 favDialogJob = null
                 updateFavButtonUi()
@@ -284,12 +284,12 @@ internal fun PlayerActivity.applyFavSelection(
                 BiliApi.favResourceDeal(rid = rid, addMediaIds = add, delMediaIds = del)
                 actionFavored = selected.isNotEmpty()
                 updateFavButtonUi()
-                Toast.makeText(this@applyFavSelection, "收藏已更新", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@applyFavSelection, "收藏已更新")
             } catch (t: Throwable) {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "操作失败")
-                Toast.makeText(this@applyFavSelection, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@applyFavSelection, msg)
             } finally {
                 favApplyJob = null
                 updateFavButtonUi()
@@ -324,7 +324,7 @@ internal fun PlayerActivity.updateUpButton() {
 internal fun PlayerActivity.showPlaylistDialog() {
     val list = playlistItems
     if (list.isEmpty() || playlistIndex !in list.indices) {
-        Toast.makeText(this, "暂无播放列表", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "暂无播放列表")
         return
     }
 
@@ -351,7 +351,7 @@ internal fun PlayerActivity.showPlaylistDialog() {
 internal fun PlayerActivity.showRecommendDialog() {
     val requestBvid = currentBvid.trim()
     if (requestBvid.isBlank()) {
-        Toast.makeText(this, "缺少 bvid", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "缺少 bvid")
         return
     }
 
@@ -362,7 +362,7 @@ internal fun PlayerActivity.showRecommendDialog() {
     }
 
     if (relatedVideosFetchJob?.isActive == true) {
-        Toast.makeText(this, "推荐视频加载中…", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "推荐视频加载中…")
         return
     }
 
@@ -379,7 +379,7 @@ internal fun PlayerActivity.showRecommendDialog() {
 
                 relatedVideosCache = PlayerActivity.RelatedVideosCache(bvid = requestBvid, items = list)
                 if (list.isEmpty()) {
-                    Toast.makeText(this@showRecommendDialog, "暂无推荐视频", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@showRecommendDialog, "暂无推荐视频")
                     return@launch
                 }
                 showRecommendDialog(items = list)
@@ -387,7 +387,7 @@ internal fun PlayerActivity.showRecommendDialog() {
                 if (t is CancellationException) return@launch
                 val e = t as? BiliApiException
                 val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "加载推荐视频失败")
-                Toast.makeText(this@showRecommendDialog, msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@showRecommendDialog, msg)
             } finally {
                 if (token == relatedVideosFetchToken) relatedVideosFetchJob = null
             }
@@ -465,7 +465,7 @@ internal fun PlayerActivity.playRecommendedNext(userInitiated: Boolean) {
                     initialTitle = picked.title.takeIf { it.isNotBlank() },
                 )
             } else {
-                if (userInitiated) Toast.makeText(this@playRecommendedNext, "暂无推荐视频", Toast.LENGTH_SHORT).show()
+                if (userInitiated) AppToast.show(this@playRecommendedNext, "暂无推荐视频")
                 playNext(userInitiated = userInitiated)
             }
         }
@@ -486,7 +486,7 @@ internal fun PlayerActivity.playRecommendedNext(userInitiated: Boolean) {
                 relatedVideosCache = PlayerActivity.RelatedVideosCache(bvid = requestBvid, items = list)
                 val picked = pickRecommendedVideo(list, excludeBvid = requestBvid)
                 if (picked == null) {
-                    if (userInitiated) Toast.makeText(this@playRecommendedNext, "暂无推荐视频", Toast.LENGTH_SHORT).show()
+                    if (userInitiated) AppToast.show(this@playRecommendedNext, "暂无推荐视频")
                     playNext(userInitiated = userInitiated)
                     return@launch
                 }
@@ -503,7 +503,7 @@ internal fun PlayerActivity.playRecommendedNext(userInitiated: Boolean) {
                 if (userInitiated) {
                     val e = t as? BiliApiException
                     val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "加载推荐视频失败")
-                    Toast.makeText(this@playRecommendedNext, msg, Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@playRecommendedNext, msg)
                 }
                 playNext(userInitiated = userInitiated)
             } finally {
@@ -522,12 +522,12 @@ internal fun PlayerActivity.playNextByPlaybackMode(userInitiated: Boolean) {
 internal fun PlayerActivity.playNext(userInitiated: Boolean) {
     val list = playlistItems
     if (list.isEmpty() || playlistIndex !in list.indices) {
-        if (userInitiated) Toast.makeText(this, "暂无下一个视频", Toast.LENGTH_SHORT).show()
+        if (userInitiated) AppToast.show(this, "暂无下一个视频")
         return
     }
     val next = playlistIndex + 1
     if (next !in list.indices) {
-        if (userInitiated) Toast.makeText(this, "已是最后一个视频", Toast.LENGTH_SHORT).show()
+        if (userInitiated) AppToast.show(this, "已是最后一个视频")
         return
     }
     playPlaylistIndex(next)
@@ -536,12 +536,12 @@ internal fun PlayerActivity.playNext(userInitiated: Boolean) {
 internal fun PlayerActivity.playPrev(userInitiated: Boolean) {
     val list = playlistItems
     if (list.isEmpty() || playlistIndex !in list.indices) {
-        if (userInitiated) Toast.makeText(this, "暂无上一个视频", Toast.LENGTH_SHORT).show()
+        if (userInitiated) AppToast.show(this, "暂无上一个视频")
         return
     }
     val prev = playlistIndex - 1
     if (prev !in list.indices) {
-        if (userInitiated) Toast.makeText(this, "已是第一个视频", Toast.LENGTH_SHORT).show()
+        if (userInitiated) AppToast.show(this, "已是第一个视频")
         return
     }
     playPlaylistIndex(prev)

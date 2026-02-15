@@ -5,7 +5,6 @@ import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.View
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.lifecycleScope
@@ -18,6 +17,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.tv.RemoteKeys
 import blbl.cat3399.core.ui.ActivityStackLimiter
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DpadGridController
@@ -63,7 +63,7 @@ class UpDetailActivity : BaseActivity() {
         applyUiMode()
 
         if (mid <= 0L) {
-            Toast.makeText(this, "无效的 UP 主 mid", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "无效的 UP 主 mid")
             finish()
             return
         }
@@ -308,7 +308,7 @@ class UpDetailActivity : BaseActivity() {
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("UpDetail", "loadFeed failed mid=$mid page=$targetPage", t)
-                Toast.makeText(this@UpDetailActivity, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@UpDetailActivity, "加载失败，可查看 Logcat(标签 BLBL)")
             } finally {
                 if (token == requestToken) binding.swipeRefresh.isRefreshing = false
                 isLoadingMore = false
@@ -319,7 +319,7 @@ class UpDetailActivity : BaseActivity() {
     private fun onFollowClicked() {
         if (!BiliClient.cookies.hasSessData()) {
             startActivity(Intent(this, QrLoginActivity::class.java))
-            Toast.makeText(this, "登录后才能关注", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "登录后才能关注")
             return
         }
         if (followActionInFlight) return
@@ -333,7 +333,7 @@ class UpDetailActivity : BaseActivity() {
             try {
                 BiliApi.modifyRelation(fid = mid, act = if (wantFollow) 1 else 2, reSrc = 11)
                 isFollowed = wantFollow
-                Toast.makeText(this@UpDetailActivity, if (wantFollow) "已关注" else "已取关", Toast.LENGTH_SHORT).show()
+                AppToast.show(this@UpDetailActivity, if (wantFollow) "已关注" else "已取关")
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.w("UpDetail", "modifyRelation failed mid=$mid wantFollow=$wantFollow", t)
@@ -345,7 +345,7 @@ class UpDetailActivity : BaseActivity() {
                         "missing_csrf" -> "登录态不完整，请重新登录"
                         else -> raw
                     }
-                Toast.makeText(this@UpDetailActivity, if (msg.isBlank()) "操作失败" else msg, Toast.LENGTH_SHORT).show()
+                AppToast.show(this@UpDetailActivity, if (msg.isBlank()) "操作失败" else msg)
             } finally {
                 followActionInFlight = false
                 updateFollowUi()

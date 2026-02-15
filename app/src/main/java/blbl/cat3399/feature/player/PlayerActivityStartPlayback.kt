@@ -3,10 +3,10 @@ package blbl.cat3399.feature.player
 import android.content.Intent
 import android.net.Uri
 import android.view.View
-import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.api.BiliApi
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.util.parseBangumiRedirectUrl
@@ -167,7 +167,7 @@ internal fun PlayerActivity.startPlayback(
         playbackUncaughtHandler
             ?: CoroutineExceptionHandler { _, throwable ->
                 AppLog.e("Player", "uncaught", throwable)
-                Toast.makeText(this@startPlayback, "播放失败：${throwable.message}", Toast.LENGTH_LONG).show()
+                AppToast.showLong(this@startPlayback, "播放失败：${throwable.message}")
                 finish()
             }
 
@@ -361,7 +361,7 @@ internal fun PlayerActivity.startPlayback(
                 if (throwable is CancellationException) return@launch
                 AppLog.e("Player", "start failed", throwable)
                 if (!handlePlayUrlErrorIfNeeded(throwable)) {
-                    Toast.makeText(this@startPlayback, "加载播放信息失败：${throwable.message}", Toast.LENGTH_LONG).show()
+                    AppToast.showLong(this@startPlayback, "加载播放信息失败：${throwable.message}")
                 }
             }
         }
@@ -551,7 +551,7 @@ internal fun PlayerActivity.handlePlayUrlErrorIfNeeded(t: Throwable): Boolean {
                 append("可能触发风控，建议重新登录或稍后重试。")
             }
         }
-    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    AppToast.showLong(this, msg)
     return true
 }
 
@@ -570,7 +570,7 @@ internal fun PlayerActivity.showRiskControlBypassHintIfNeeded(playJson: JSONObje
             append("\n")
             append("如持续出现，请向作者反馈日志。")
         }
-    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    AppToast.showLong(this, msg)
 }
 
 internal fun PlayerActivity.isRiskControl(e: BiliApiException): Boolean {

@@ -8,7 +8,6 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup.MarginLayoutParams
-import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.C
@@ -23,6 +22,7 @@ import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Danmaku
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
 import blbl.cat3399.core.ui.Immersive
@@ -110,7 +110,7 @@ class LivePlayerActivity : BaseActivity() {
         roomTitle = intent.getStringExtra(EXTRA_TITLE).orEmpty()
         roomUname = intent.getStringExtra(EXTRA_UNAME).orEmpty()
         if (roomId <= 0L) {
-            Toast.makeText(this, "缺少 room_id", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "缺少 room_id")
             finish()
             return
         }
@@ -150,7 +150,7 @@ class LivePlayerActivity : BaseActivity() {
                 override fun onPlayerError(error: PlaybackException) {
                     AppLog.e("LivePlayer", "onPlayerError", error)
                     if (tryAutoFailoverOnError(error)) return
-                    Toast.makeText(this@LivePlayerActivity, "播放失败：${error.errorCodeName}", Toast.LENGTH_SHORT).show()
+                    AppToast.show(this@LivePlayerActivity, "播放失败：${error.errorCodeName}")
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -373,7 +373,7 @@ class LivePlayerActivity : BaseActivity() {
                 when (item.title) {
                     "清晰度" -> showQualityDialog()
                     "线路选择" -> showLineDialog()
-                    else -> Toast.makeText(this, "暂未实现：${item.title}", Toast.LENGTH_SHORT).show()
+                    else -> AppToast.show(this, "暂未实现：${item.title}")
                 }
             }
         binding.recyclerSettings.adapter = settingsAdapter
@@ -579,7 +579,7 @@ class LivePlayerActivity : BaseActivity() {
 
         session = session.copy(lineOrder = nextIndex + 1)
         refreshSettings()
-        Toast.makeText(this, "线路 $fromOrder 失败，尝试线路 $toOrder", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "线路 $fromOrder 失败，尝试线路 $toOrder")
 
         autoFailoverJob =
             lifecycleScope.launch {
@@ -634,7 +634,7 @@ class LivePlayerActivity : BaseActivity() {
             AppLog.e("LivePlayer", "loadAndPlay failed", t)
             val e = t as? BiliApiException
             val msg = e?.let { "B 站返回：${it.apiCode} / ${it.apiMessage}" } ?: (t.message ?: "未知错误")
-            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            AppToast.showLong(this, msg)
         }
     }
 
@@ -718,12 +718,12 @@ class LivePlayerActivity : BaseActivity() {
 
     private fun showQualityDialog() {
         val play = lastPlay ?: run {
-            Toast.makeText(this, "暂无可用清晰度", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "暂无可用清晰度")
             return
         }
         val available = play.acceptQn.ifEmpty { play.qnDesc.keys.sortedDescending() }.distinct()
         if (available.isEmpty()) {
-            Toast.makeText(this, "暂无可用清晰度", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "暂无可用清晰度")
             return
         }
         val optionsAvailable = available.sortedWith(compareBy({ it != LIVE_QN_ORIGINAL }, { -it }))
@@ -750,12 +750,12 @@ class LivePlayerActivity : BaseActivity() {
 
     private fun showLineDialog() {
         val play = lastPlay ?: run {
-            Toast.makeText(this, "暂无可用线路", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "暂无可用线路")
             return
         }
         val lines = play.lines
         if (lines.isEmpty()) {
-            Toast.makeText(this, "暂无可用线路", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "暂无可用线路")
             return
         }
         val options = lines.map { "线路 ${it.order}" }

@@ -9,7 +9,6 @@ import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.ViewTreeObserver
 import android.widget.LinearLayout
-import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +25,7 @@ import blbl.cat3399.core.log.CrashTracker
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.tv.RemoteKeys
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.FocusTreeUtils
@@ -292,7 +292,7 @@ class MainActivity : BaseActivity() {
             startActivity(Intent(this, FollowingListActivity::class.java))
         }
         userInfoOverlay.btnFollower.setOnClickListener {
-            Toast.makeText(this, "粉丝列表未实现", Toast.LENGTH_SHORT).show()
+            AppToast.show(this, "粉丝列表未实现")
         }
         userInfoOverlay.btnLogout.setOnClickListener { showLogoutConfirm() }
 
@@ -416,7 +416,7 @@ class MainActivity : BaseActivity() {
                 BiliClient.prefs.webRefreshToken = null
                 BiliClient.prefs.webCookieRefreshCheckedEpochDay = -1L
                 BiliClient.prefs.biliTicketCheckedEpochDay = -1L
-                Toast.makeText(this, "已退出登录", Toast.LENGTH_SHORT).show()
+                AppToast.show(this, "已退出登录")
                 hideUserInfoOverlay()
                 refreshSidebarUser()
             }
@@ -466,7 +466,7 @@ class MainActivity : BaseActivity() {
         val isSecond = now - lastBackAtMs <= BACK_DOUBLE_PRESS_WINDOW_MS
         if (isSecond) return true
         lastBackAtMs = now
-        Toast.makeText(this, "再按一次退出应用", Toast.LENGTH_SHORT).show()
+        AppToast.show(this, "再按一次退出应用")
         return false
     }
 

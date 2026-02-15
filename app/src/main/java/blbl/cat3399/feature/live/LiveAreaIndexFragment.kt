@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
@@ -12,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
@@ -52,7 +52,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
                     pendingRestorePosition = position
                     val nav = parentFragment as? LiveNavigator
                     if (nav == null) {
-                        Toast.makeText(requireContext(), "无法打开分区：找不到导航宿主", Toast.LENGTH_SHORT).show()
+                        AppToast.show(requireContext(), "无法打开分区：找不到导航宿主")
                         return@LiveAreaAdapter
                     }
                     nav.openAreaDetail(
@@ -150,7 +150,7 @@ class LiveAreaIndexFragment : Fragment(), LivePageFocusTarget, LivePageReturnFoc
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 AppLog.e("LiveAreaIndex", "load failed pid=$parentAreaId title=$parentTitle", t)
-                context?.let { Toast.makeText(it, "加载失败，可查看 Logcat(标签 BLBL)", Toast.LENGTH_SHORT).show() }
+                context?.let { AppToast.show(it, "加载失败，可查看 Logcat(标签 BLBL)") }
             } finally {
                 if (token == requestToken) _binding?.swipeRefresh?.isRefreshing = false
             }
