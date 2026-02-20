@@ -101,6 +101,49 @@
             app:layout_constraintTop_toBottomOf="@id/tv_user" />
 
         <LinearLayout
+            android:id="@+id/row_pictures"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="@id/tv_user"
+            app:layout_constraintTop_toBottomOf="@id/tv_message">
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/iv_picture_1"
+                android:layout_width="96dp"
+                android:layout_height="72dp"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@string/app_name"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay_Blbl_Rounded" />
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/iv_picture_2"
+                android:layout_width="96dp"
+                android:layout_height="72dp"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@string/app_name"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay_Blbl_Rounded" />
+
+            <com.google.android.material.imageview.ShapeableImageView
+                android:id="@+id/iv_picture_3"
+                android:layout_width="96dp"
+                android:layout_height="72dp"
+                android:contentDescription="@string/app_name"
+                android:scaleType="centerCrop"
+                android:visibility="gone"
+                app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay_Blbl_Rounded" />
+
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/row_reply_preview"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -109,7 +152,7 @@
             android:visibility="gone"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="@id/tv_user"
-            app:layout_constraintTop_toBottomOf="@id/tv_message">
+            app:layout_constraintTop_toBottomOf="@id/row_pictures">
 
             <TextView
                 android:id="@+id/tv_reply_preview_1"

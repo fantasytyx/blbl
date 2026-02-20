@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.HandlerThread
@@ -15,6 +16,8 @@ import android.view.View
 import android.view.ViewTreeObserver
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import blbl.cat3399.core.emote.EmoteBitmapLoader
+import blbl.cat3399.core.emote.ReplyEmotePanelRepository
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Danmaku
 import blbl.cat3399.core.net.BiliClient
@@ -77,6 +80,28 @@ class DanmakuView @JvmOverloads constructor(
         // Disable bitmap filtering to reduce shimmer during horizontal motion on some displays.
         isFilterBitmap = false
     }
+    private val emotePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+    private val emotePlaceholderFill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val emotePlaceholderStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = dp(1f).toFloat().coerceAtLeast(1f)
+    }
+    private val emoteTmpRectF = RectF()
+    private var lastReplyEmoteVersion: Int = 0
+
+    private sealed interface EmoteSegment {
+        data class Text(
+            val start: Int,
+            val end: Int,
+        ) : EmoteSegment
+
+        data class Emote(
+            val token: String,
+            val url: String,
+        ) : EmoteSegment
+    }
+
+    private var emoteSegmentsCache = IdentityHashMap<Danmaku, List<EmoteSegment>>()
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0xFFFFFFFF.toInt()
@@ -437,6 +462,14 @@ class DanmakuView @JvmOverloads constructor(
             return
         }
 
+        ReplyEmotePanelRepository.init(context)
+        val replyEmoteVersion = ReplyEmotePanelRepository.version()
+        if (replyEmoteVersion != lastReplyEmoteVersion) {
+            lastReplyEmoteVersion = replyEmoteVersion
+            clearBitmaps()
+            emoteSegmentsCache.clear()
+        }
+
         val prevRawPositionMs = lastPositionMs
         val rawPositionMs = provider()
         val now = SystemClock.uptimeMillis()
@@ -488,6 +521,13 @@ class DanmakuView @JvmOverloads constructor(
         val outlinePad = max(1f, stroke.strokeWidth / 2f)
         val opacityAlpha = (config.opacity * 255).roundToInt().coerceIn(0, 255)
         bitmapPaint.alpha = opacityAlpha
+        emotePaint.alpha = opacityAlpha
+        run {
+            val fillA = ((opacityAlpha * 0x22) / 255).coerceIn(0, 255)
+            val strokeA = ((opacityAlpha * 0x66) / 255).coerceIn(0, 255)
+            emotePlaceholderFill.color = (fillA shl 24) or 0x000000
+            emotePlaceholderStroke.color = (strokeA shl 24) or 0xFFFFFF
+        }
         val topInsetPx = safeTopInsetPx()
         val bottomInsetPx = safeBottomInsetPx()
         val invTop = topInsetPx.coerceIn(0, height.coerceAtLeast(0))
@@ -547,7 +587,9 @@ class DanmakuView @JvmOverloads constructor(
                 continue
             }
 
-            if (requested < MAX_BITMAP_REQUESTS_PER_FRAME && rendering[d] != true) {
+            val emoteSegments = emoteSegmentsFor(d)
+            val emotesReady = emoteSegments?.let(::areEmoteBitmapsReadyAndPrefetch) ?: true
+            if (requested < MAX_BITMAP_REQUESTS_PER_FRAME && rendering[d] != true && emotesReady) {
                 requested++
                 rendering[d] = true
                 ensureBitmapRenderer()
@@ -602,6 +644,9 @@ class DanmakuView @JvmOverloads constructor(
                 if (d.text.isBlank()) continue
                 if (bitmapCache.containsKey(d)) continue
                 if (rendering[d] == true) continue
+                val emoteSegments = emoteSegmentsFor(d)
+                val emotesReady = emoteSegments?.let(::areEmoteBitmapsReadyAndPrefetch) ?: true
+                if (!emotesReady) continue
                 rendering[d] = true
                 ensureBitmapRenderer()
                 val currentQueueDepth = debugStats.queueDepth()
@@ -780,6 +825,61 @@ class DanmakuView @JvmOverloads constructor(
         insetsDirty = false
     }
 
+    private fun emoteSegmentsFor(danmaku: Danmaku): List<EmoteSegment>? {
+        // Fast-path: no token marker.
+        val text = danmaku.text
+        if (!text.contains('[')) return null
+        if (ReplyEmotePanelRepository.version() <= 0) return null
+
+        val cached = emoteSegmentsCache[danmaku]
+        if (cached != null) return cached
+
+        val parsed = parseEmoteSegments(text) ?: return null
+        if (emoteSegmentsCache.size >= MAX_EMOTE_SEGMENTS_CACHE_ITEMS) {
+            emoteSegmentsCache.clear()
+        }
+        emoteSegmentsCache[danmaku] = parsed
+        return parsed
+    }
+
+    private fun areEmoteBitmapsReadyAndPrefetch(segments: List<EmoteSegment>): Boolean {
+        var ready = true
+        for (seg in segments) {
+            if (seg !is EmoteSegment.Emote) continue
+            val bmp = EmoteBitmapLoader.getCached(seg.url)
+            if (bmp != null) continue
+            ready = false
+            EmoteBitmapLoader.prefetch(seg.url)
+        }
+        return ready
+    }
+
+    private fun parseEmoteSegments(text: String): List<EmoteSegment>? {
+        var i = 0
+        var lastTextStart = 0
+        var hasEmote = false
+        val out = ArrayList<EmoteSegment>(8)
+        while (i < text.length) {
+            val open = text.indexOf('[', startIndex = i)
+            if (open < 0) break
+            val close = text.indexOf(']', startIndex = open + 1)
+            if (close < 0) break
+
+            val token = text.substring(open, close + 1)
+            val url = ReplyEmotePanelRepository.urlForToken(token)
+            if (url != null && url.startsWith("http")) {
+                hasEmote = true
+                if (open > lastTextStart) out.add(EmoteSegment.Text(start = lastTextStart, end = open))
+                out.add(EmoteSegment.Emote(token = token, url = url))
+                lastTextStart = close + 1
+            }
+            i = close + 1
+        }
+        if (!hasEmote) return null
+        if (lastTextStart < text.length) out.add(EmoteSegment.Text(start = lastTextStart, end = text.length))
+        return out
+    }
+
     private fun drawTextFallback(
         canvas: Canvas,
         danmaku: Danmaku,
@@ -789,7 +889,8 @@ class DanmakuView @JvmOverloads constructor(
         baselineOffset: Float,
         opacityAlpha: Int,
     ) {
-        if (danmaku.text.isBlank()) return
+        val text = danmaku.text
+        if (text.isBlank()) return
 
         val rgb = danmaku.color and 0xFFFFFF
         val strokeAlpha = ((opacityAlpha * 0xCC) / 255).coerceIn(0, 255)
@@ -798,8 +899,40 @@ class DanmakuView @JvmOverloads constructor(
 
         val textX = (x + outlinePad).roundToInt().toFloat()
         val baseline = (yTop + baselineOffset).roundToInt().toFloat()
-        canvas.drawText(danmaku.text, textX, baseline, stroke)
-        canvas.drawText(danmaku.text, textX, baseline, fill)
+        val segments = emoteSegmentsFor(danmaku)
+        if (segments == null) {
+            canvas.drawText(text, textX, baseline, stroke)
+            canvas.drawText(text, textX, baseline, fill)
+            return
+        }
+
+        val emoteSizePx = (fontMetrics.descent - fontMetrics.ascent).coerceAtLeast(1f)
+        val emoteTop = (yTop + outlinePad).roundToInt().toFloat()
+        val r = (emoteSizePx * 0.18f).coerceIn(2f, 10f)
+        var cursorX = textX
+        for (seg in segments) {
+            when (seg) {
+                is EmoteSegment.Text -> {
+                    if (seg.end > seg.start) {
+                        canvas.drawText(text, seg.start, seg.end, cursorX, baseline, stroke)
+                        canvas.drawText(text, seg.start, seg.end, cursorX, baseline, fill)
+                        cursorX += fill.measureText(text, seg.start, seg.end)
+                    }
+                }
+                is EmoteSegment.Emote -> {
+                    val bmp = EmoteBitmapLoader.getCached(seg.url)
+                    if (bmp != null) {
+                        emoteTmpRectF.set(cursorX, emoteTop, cursorX + emoteSizePx, emoteTop + emoteSizePx)
+                        canvas.drawBitmap(bmp, null, emoteTmpRectF, emotePaint)
+                    } else {
+                        emoteTmpRectF.set(cursorX, emoteTop, cursorX + emoteSizePx, emoteTop + emoteSizePx)
+                        canvas.drawRoundRect(emoteTmpRectF, r, r, emotePlaceholderFill)
+                        canvas.drawRoundRect(emoteTmpRectF, r, r, emotePlaceholderStroke)
+                    }
+                    cursorX += emoteSizePx
+                }
+            }
+        }
     }
 
     private fun trimBitmapCache(frameId: Int, nowUptimeMs: Long) {
@@ -924,6 +1057,8 @@ class DanmakuView @JvmOverloads constructor(
                         typeface = Typeface.DEFAULT_BOLD
                         color = 0xCC000000.toInt()
                     }
+                val renderEmotePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+                val tmpRectF = RectF()
                 val fm = Paint.FontMetrics()
                 val renderCanvas = Canvas()
                 try {
@@ -942,6 +1077,8 @@ class DanmakuView @JvmOverloads constructor(
                                     canvas = renderCanvas,
                                     fill = renderFill,
                                     stroke = renderStroke,
+                                    emotePaint = renderEmotePaint,
+                                    tmpRectF = tmpRectF,
                                 )
                             }.getOrNull()
                         if (created == null) {
@@ -966,27 +1103,61 @@ class DanmakuView @JvmOverloads constructor(
         canvas: Canvas,
         fill: Paint,
         stroke: Paint,
-    ): CachedBitmap {
+        emotePaint: Paint,
+        tmpRectF: RectF,
+    ): CachedBitmap? {
         val textBoxHeight = (fontMetrics.descent - fontMetrics.ascent) + outlinePad * 2f
         val w = max(1, ceil(textWidth.toDouble()).toInt())
         val h = max(1, ceil(textBoxHeight.toDouble()).toInt())
 
         val pooled = bitmapPool.acquire(w, h)
-        val bmp = pooled ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val outBitmap = pooled ?: Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         if (pooled != null) debugStats.bitmapReused.incrementAndGet() else debugStats.bitmapCreated.incrementAndGet()
-        bmp.eraseColor(Color.TRANSPARENT)
-        canvas.setBitmap(bmp)
+        outBitmap.eraseColor(Color.TRANSPARENT)
+        canvas.setBitmap(outBitmap)
 
         val color = (0xFF000000.toInt() or (danmaku.color and 0xFFFFFF))
         fill.color = color
 
         val x = outlinePad
         val baseline = outlinePad - fontMetrics.ascent
-        canvas.drawText(danmaku.text, x, baseline, stroke)
-        canvas.drawText(danmaku.text, x, baseline, fill)
+        val text = danmaku.text
+        val segments = parseEmoteSegments(text)
+        if (segments == null) {
+            canvas.drawText(text, x, baseline, stroke)
+            canvas.drawText(text, x, baseline, fill)
+        } else {
+            val emoteSizePx = (fontMetrics.descent - fontMetrics.ascent).coerceAtLeast(1f)
+            val emoteTop = outlinePad
+            var cursorX = x
+            for (seg in segments) {
+                when (seg) {
+                    is EmoteSegment.Text -> {
+                        if (seg.end > seg.start) {
+                            canvas.drawText(text, seg.start, seg.end, cursorX, baseline, stroke)
+                            canvas.drawText(text, seg.start, seg.end, cursorX, baseline, fill)
+                            cursorX += fill.measureText(text, seg.start, seg.end)
+                        }
+                    }
+                    is EmoteSegment.Emote -> {
+                        val emoteBmp =
+                            EmoteBitmapLoader.getCached(seg.url)
+                                ?: run {
+                                    canvas.setBitmap(null)
+                                    val pooledBack = bitmapPool.tryPut(outBitmap)
+                                    if (!pooledBack) recycleBitmapQuietly(outBitmap)
+                                    return null
+                                }
+                        tmpRectF.set(cursorX, emoteTop, cursorX + emoteSizePx, emoteTop + emoteSizePx)
+                        canvas.drawBitmap(emoteBmp, null, tmpRectF, emotePaint)
+                        cursorX += emoteSizePx
+                    }
+                }
+            }
+        }
         canvas.setBitmap(null)
 
-        return CachedBitmap(bitmap = bmp).apply {
+        return CachedBitmap(bitmap = outBitmap).apply {
             lastUseUptimeMs = SystemClock.uptimeMillis()
         }
     }
@@ -1049,6 +1220,7 @@ class DanmakuView @JvmOverloads constructor(
         paceLogger.reset()
         smoothClock.reset(positionMs = 0L, nowUptimeMs = 0L)
         clearBitmaps(recycleMode = BitmapRecycleMode.ASYNC)
+        emoteSegmentsCache.clear()
         recycleScope.launch { bitmapPool.clear() }
         if (viewTreeObserver.isAlive) {
             viewTreeObserver.removeOnGlobalLayoutListener(insetsListener)
@@ -1083,6 +1255,7 @@ class DanmakuView @JvmOverloads constructor(
         private const val MAX_FALLBACK_TEXT_PER_FRAME = 16
         private const val BITMAP_QUEUE_CAPACITY = 96
         private const val BITMAP_RENDER_WORKERS = 2
+        private const val MAX_EMOTE_SEGMENTS_CACHE_ITEMS = 1_500
 
         private const val PREFETCH_WINDOW_MS = 550
         private const val PREFETCH_MAX_CANDIDATES_PER_FRAME = 18

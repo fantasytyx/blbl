@@ -1,6 +1,7 @@
 package blbl.cat3399.feature.player.danmaku
 
 import android.graphics.Paint
+import blbl.cat3399.core.emote.ReplyEmotePanelRepository
 import blbl.cat3399.core.model.Danmaku
 import java.util.Arrays
 import java.util.IdentityHashMap
@@ -36,6 +37,7 @@ class DanmakuEngine {
     private val measuredTextWidth = IdentityHashMap<Danmaku, Float>()
     private var widthCacheTextSize: Float = Float.NaN
     private var widthCacheOutlinePad: Float = Float.NaN
+    private var widthCacheEmoteVersion: Int = 0
     private var scrollLaneLast: Array<Active?> = emptyArray()
     private var scrollLaneLastTail: FloatArray = FloatArray(0)
     private var topLaneLast: Array<Active?> = emptyArray()
@@ -177,14 +179,54 @@ class DanmakuEngine {
 
     fun measureTextWidth(danmaku: Danmaku, paint: Paint, outlinePaddingPx: Float): Float {
         val outlinePad = outlinePaddingPx.coerceAtLeast(0f)
-        ensureMeasureCacheStyle(textSizePx = paint.textSize, outlinePad = outlinePad)
+        val emoteVersion = ReplyEmotePanelRepository.version()
+        ensureMeasureCacheStyle(textSizePx = paint.textSize, outlinePad = outlinePad, emoteVersion = emoteVersion)
         measuredTextWidth[danmaku]?.let { return it }
-        val measured = paint.measureText(danmaku.text) + outlinePad * 2f
+        val measured = measureTextWidthWithEmotes(text = danmaku.text, paint = paint, outlinePad = outlinePad)
         if (measuredTextWidth.size >= MAX_TEXT_WIDTH_CACHE_ITEMS) {
             measuredTextWidth.clear()
         }
         measuredTextWidth[danmaku] = measured
         return measured
+    }
+
+    private fun measureTextWidthWithEmotes(text: String, paint: Paint, outlinePad: Float): Float {
+        if (text.isBlank()) return outlinePad * 2f
+        if (!text.contains('[')) return paint.measureText(text) + outlinePad * 2f
+
+        // Emotes are rendered as square images with the same height as the text.
+        paint.getFontMetrics(fontMetrics)
+        val emoteSizePx = (fontMetrics.descent - fontMetrics.ascent).coerceAtLeast(1f)
+
+        var w = 0f
+        var i = 0
+        while (i < text.length) {
+            val open = text.indexOf('[', startIndex = i)
+            if (open < 0) {
+                w += paint.measureText(text, i, text.length)
+                break
+            }
+            val close = text.indexOf(']', startIndex = open + 1)
+            if (close < 0) {
+                w += paint.measureText(text, i, text.length)
+                break
+            }
+
+            if (open > i) {
+                w += paint.measureText(text, i, open)
+            }
+
+            val token = text.substring(open, close + 1)
+            val url = ReplyEmotePanelRepository.urlForToken(token)
+            if (url != null && url.startsWith("http")) {
+                w += emoteSizePx
+            } else {
+                w += paint.measureText(text, open, close + 1)
+            }
+            i = close + 1
+        }
+
+        return w + outlinePad * 2f
     }
 
     fun update(
@@ -207,7 +249,8 @@ class DanmakuEngine {
         val safeBottom = bottomInsetPx.coerceIn(0, height - safeTop)
         val availableHeight = (height - safeTop - safeBottom).coerceAtLeast(0)
         val outlinePad = outlinePaddingPx.coerceAtLeast(0f)
-        ensureMeasureCacheStyle(textSizePx = paint.textSize, outlinePad = outlinePad)
+        val emoteVersion = ReplyEmotePanelRepository.version()
+        ensureMeasureCacheStyle(textSizePx = paint.textSize, outlinePad = outlinePad, emoteVersion = emoteVersion)
         paint.getFontMetrics(fontMetrics)
         val textBoxHeight = (fontMetrics.descent - fontMetrics.ascent) + outlinePad * 2f
         val laneHeight = max(18f, textBoxHeight * 1.15f)
@@ -523,10 +566,11 @@ class DanmakuEngine {
         return x.coerceAtLeast(0f)
     }
 
-    private fun ensureMeasureCacheStyle(textSizePx: Float, outlinePad: Float) {
-        if (widthCacheTextSize == textSizePx && widthCacheOutlinePad == outlinePad) return
+    private fun ensureMeasureCacheStyle(textSizePx: Float, outlinePad: Float, emoteVersion: Int) {
+        if (widthCacheTextSize == textSizePx && widthCacheOutlinePad == outlinePad && widthCacheEmoteVersion == emoteVersion) return
         widthCacheTextSize = textSizePx
         widthCacheOutlinePad = outlinePad
+        widthCacheEmoteVersion = emoteVersion
         measuredTextWidth.clear()
     }
 

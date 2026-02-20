@@ -4,6 +4,7 @@ import android.app.Application
 import android.os.Build
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.log.CrashTracker
+import blbl.cat3399.core.emote.ReplyEmotePanelRepository
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.net.WebCookieMaintainer
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +29,10 @@ class BlblApp : Application() {
         appScope.launch {
             runCatching { WebCookieMaintainer.ensureDailyMaintenance() }
                 .onFailure { AppLog.w("BlblApp", "daily maintenance failed", it) }
+        }
+        appScope.launch {
+            runCatching { ReplyEmotePanelRepository.warmup(this@BlblApp) }
+                .onFailure { AppLog.w("BlblApp", "reply emote warmup failed", it) }
         }
     }
 

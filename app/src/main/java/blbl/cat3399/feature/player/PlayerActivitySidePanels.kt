@@ -674,6 +674,11 @@ private fun parseReplyItem(
     val avatar = member.optString("avatar", "").trim().takeIf { it.isNotBlank() }
     val content = obj.optJSONObject("content") ?: JSONObject()
     val message = content.optString("message", "").trim()
+    val emotes = parseEmoteMap(content.optJSONObject("emote"))
+    val pictures = parsePictureUrls(content.optJSONArray("pictures"))
+    val noteCvid =
+        obj.optString("note_cvid_str", "").trim().toLongOrNull()
+            ?: obj.optLong("note_cvid", 0L)
     val ctime = obj.optLong("ctime", 0L).takeIf { it > 0L } ?: 0L
     val like = obj.optLong("like", 0L).coerceAtLeast(0L)
     val replyCount = obj.optInt("count", 0).coerceAtLeast(0)
@@ -695,6 +700,9 @@ private fun parseReplyItem(
         userName = uname,
         avatarUrl = avatar,
         message = message,
+        emotes = emotes,
+        pictures = pictures,
+        noteCvid = noteCvid.takeIf { it > 0L } ?: 0L,
         ctimeSec = ctime,
         likeCount = like,
         replyCount = replyCount,
@@ -716,8 +724,42 @@ private fun parseReplyPreviewList(arr: JSONArray, limit: Int = 2): List<PlayerCo
         val uname = member.optString("uname", "").trim()
         val content = obj.optJSONObject("content") ?: JSONObject()
         val message = content.optString("message", "").trim()
+        val emotes = parseEmoteMap(content.optJSONObject("emote"))
         if (uname.isBlank() && message.isBlank()) continue
-        out.add(PlayerCommentsAdapter.ReplyPreview(userName = uname, message = message))
+        out.add(PlayerCommentsAdapter.ReplyPreview(userName = uname, message = message, emotes = emotes))
+    }
+    return out
+}
+
+private fun parseEmoteMap(obj: JSONObject?): Map<String, String> {
+    if (obj == null || obj.length() <= 0) return emptyMap()
+    val out = HashMap<String, String>(obj.length().coerceAtLeast(0))
+    val it = obj.keys()
+    while (it.hasNext()) {
+        val key = it.next().trim()
+        if (key.isBlank()) continue
+        val value = obj.optJSONObject(key) ?: continue
+        val url = value.optString("url", "").trim()
+        if (!url.startsWith("http")) continue
+        out[key] = url
+    }
+    return out
+}
+
+private fun parsePictureUrls(arr: JSONArray?): List<String> {
+    if (arr == null || arr.length() <= 0) return emptyList()
+    val out = ArrayList<String>(arr.length().coerceAtMost(6))
+    for (i in 0 until arr.length()) {
+        val obj = arr.optJSONObject(i) ?: continue
+        val rawUrl = obj.optString("img_src", "").trim()
+        val url =
+            when {
+                rawUrl.startsWith("http") -> rawUrl
+                rawUrl.startsWith("//") -> "https:$rawUrl"
+                else -> continue
+            }
+        out.add(url)
+        if (out.size >= 6) break
     }
     return out
 }
