@@ -19,7 +19,6 @@ import blbl.cat3399.core.ui.DpadGridController
 import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
-import blbl.cat3399.core.ui.postDelayedIfAlive
 import blbl.cat3399.core.ui.postIfAlive
 import blbl.cat3399.databinding.FragmentLiveAreaDetailBinding
 import kotlinx.coroutines.CancellationException
@@ -44,8 +43,8 @@ class LiveAreaDetailFragment : Fragment() {
 
     private var initialLoadTriggered: Boolean = false
     private var pendingFocusFirstItem: Boolean = false
-    private var pendingRestorePosition: Int? = null
-    private var pendingRestoreAttemptsLeft: Int = 0
+    private var pendingRestoreRoomId: Long? = null
+    private var pendingRestorePositionHint: Int? = null
     private var dpadGridController: DpadGridController? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
@@ -71,8 +70,10 @@ class LiveAreaDetailFragment : Fragment() {
                         AppToast.show(requireContext(), "未开播")
                         return@LiveRoomAdapter
                     }
-                    pendingRestorePosition = position
-                    pendingRestoreAttemptsLeft = 24
+                    // Restore focus to this room card after returning from LivePlayerActivity.
+                    // Use roomId as the stable identity (positions can shift).
+                    pendingRestoreRoomId = room.roomId
+                    pendingRestorePositionHint = position
                     // Prioritize restoring to the clicked card after return.
                     pendingFocusFirstItem = false
                     startActivity(
@@ -261,9 +262,27 @@ class LiveAreaDetailFragment : Fragment() {
         isLoadingMore = false
         page = 1
         requestToken++
+        clearPendingRestore()
         dpadGridController?.clearPendingFocusAfterLoadMore()
         adapter.submit(emptyList())
         loadNextPage(isRefresh = true)
+    }
+
+    private fun clearPendingRestore() {
+        pendingRestoreRoomId = null
+        pendingRestorePositionHint = null
+    }
+
+    private fun resolvePendingRestorePosition(itemCount: Int): Int? {
+        val roomId = pendingRestoreRoomId ?: return null
+        val hint = pendingRestorePositionHint
+        if (hint != null && hint in 0 until itemCount) {
+            if (adapter.getItemId(hint) == roomId) return hint
+        }
+        for (i in 0 until itemCount) {
+            if (adapter.getItemId(i) == roomId) return i
+        }
+        return null
     }
 
     private fun loadNextPage(isRefresh: Boolean = false) {
@@ -308,48 +327,74 @@ class LiveAreaDetailFragment : Fragment() {
     }
 
     private fun restoreFocusIfNeeded() {
-        val pos = pendingRestorePosition ?: return
         val b = _binding ?: return
+        if (pendingRestoreRoomId == null) return
         if (!isResumed) return
         if (!::adapter.isInitialized) return
-        if (pos < 0 || pos >= adapter.itemCount) return
+
+        val itemCount = adapter.itemCount
+        if (itemCount <= 0) {
+            // Keep pending; ensure we still have a visible focus target while data binds.
+            val cur = activity?.currentFocus
+            if (cur == null || !FocusTreeUtils.isDescendantOf(cur, b.root)) {
+                b.btnBack.requestFocus()
+            }
+            return
+        }
+
+        val pos = resolvePendingRestorePosition(itemCount = itemCount)
+        if (pos == null) {
+            // The room no longer exists in this list (data changed). Give up and clear.
+            clearPendingRestore()
+            b.recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() == true || b.btnBack.requestFocus()
+            return
+        }
+
+        pendingRestorePositionHint = pos
         val recycler = b.recycler
 
         val isUiAlive = { _binding === b && isResumed }
 
-        // Fast-path: already laid out.
-        recycler.findViewHolderForAdapterPosition(pos)?.itemView?.let { target ->
-            if (target.requestFocus()) {
-                pendingRestorePosition = null
-                pendingRestoreAttemptsLeft = 0
-                return
-            }
-        }
-
         recycler.postIfAlive(isAlive = isUiAlive) outer@{
-            recycler.scrollToPosition(pos)
+            val resolved = resolvePendingRestorePosition(itemCount = adapter.itemCount) ?: run {
+                clearPendingRestore()
+                return@outer
+            }
+            recycler.scrollToPosition(resolved)
             recycler.postIfAlive(isAlive = isUiAlive) inner@{
-                val vh = recycler.findViewHolderForAdapterPosition(pos)
-                if (vh != null && vh.itemView.requestFocus()) {
-                    pendingRestorePosition = null
-                    pendingRestoreAttemptsLeft = 0
+                val resolved2 = resolvePendingRestorePosition(itemCount = adapter.itemCount) ?: run {
+                    clearPendingRestore()
                     return@inner
                 }
-
-                pendingRestoreAttemptsLeft--
-                if (pendingRestoreAttemptsLeft <= 0) {
-                    recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() == true || b.btnBack.requestFocus()
-                    pendingRestorePosition = null
-                    pendingRestoreAttemptsLeft = 0
-                } else {
-                    recycler.postDelayedIfAlive(delayMillis = 16L, isAlive = isUiAlive) { restoreFocusIfNeeded() }
-                }
+                tryRestoreFocusAtPosition(recycler = recycler, pos = resolved2, attemptsLeft = 12)
             }
         }
     }
 
+    private fun tryRestoreFocusAtPosition(recycler: RecyclerView, pos: Int, attemptsLeft: Int) {
+        val b = _binding ?: return
+        if (!isAdded || !isResumed) return
+        if (pendingRestoreRoomId == null) return
+
+        val vh = recycler.findViewHolderForAdapterPosition(pos)
+        if (vh != null && vh.itemView.requestFocus()) {
+            clearPendingRestore()
+            return
+        }
+
+        if (attemptsLeft <= 0) {
+            recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() == true || b.btnBack.requestFocus()
+            clearPendingRestore()
+            return
+        }
+
+        recycler.postIfAlive(isAlive = { _binding === b && isResumed }) {
+            tryRestoreFocusAtPosition(recycler = recycler, pos = pos, attemptsLeft = attemptsLeft - 1)
+        }
+    }
+
     private fun maybeFocusFirstItem() {
-        if (pendingRestorePosition != null) return
+        if (pendingRestoreRoomId != null) return
         if (!pendingFocusFirstItem) return
         val b = _binding ?: return
         if (!isResumed) return

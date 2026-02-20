@@ -39,10 +39,13 @@ import blbl.cat3399.feature.dynamic.DynamicFragment
 import blbl.cat3399.feature.following.FollowingListActivity
 import blbl.cat3399.feature.home.HomeFragment
 import blbl.cat3399.feature.live.LiveFragment
+import blbl.cat3399.feature.live.LiveGridTabSwitchFocusHost
 import blbl.cat3399.feature.login.QrLoginActivity
 import blbl.cat3399.feature.my.MyFragment
+import blbl.cat3399.feature.my.MyTabContentSwitchFocusHost
 import blbl.cat3399.feature.search.SearchFragment
 import blbl.cat3399.feature.settings.SettingsActivity
+import blbl.cat3399.feature.video.VideoGridTabSwitchFocusHost
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -240,9 +243,6 @@ class MainActivity : BaseActivity() {
 
                 KeyEvent.KEYCODE_DPAD_RIGHT -> {
                     if (focused != null && isInSidebar(focused)) {
-                        if (focused == binding.ivSidebarUser || focused == binding.btnSidebarLogin) {
-                            if (focusSelectedTabInCurrentFragment()) return true
-                        }
                         focusMainFromSidebar()
                         return true
                     }
@@ -690,7 +690,14 @@ class MainActivity : BaseActivity() {
 
         val focusedNow = currentFocus
         if (focusedNow != null && isInSidebar(focusedNow)) {
-            binding.root.post { focusMainFromSidebar() }
+            // Avoid stealing focus back into main if a child fragment has already restored focus
+            // (e.g. returning from playback and detail page restores a specific card).
+            binding.root.post {
+                val cur = currentFocus
+                if (cur != null && isInSidebar(cur)) {
+                    focusMainFromSidebar()
+                }
+            }
         }
     }
 
@@ -730,7 +737,8 @@ class MainActivity : BaseActivity() {
     }
 
     private fun focusMainFromSidebar(): Boolean {
-        val fragmentView = supportFragmentManager.findFragmentById(R.id.main_container)?.view ?: return false
+        val rootFragment = supportFragmentManager.findFragmentById(R.id.main_container) ?: return false
+        val fragmentView = rootFragment.view ?: return false
 
         val recyclerFollowing = fragmentView.findViewById<RecyclerView?>(R.id.recycler_following)
         if (recyclerFollowing != null) {
@@ -744,18 +752,22 @@ class MainActivity : BaseActivity() {
                 return true
             }
 
-            recyclerFollowing.post {
+            recyclerFollowing.post outer@{
+                val cur = currentFocus
+                if (cur != null && !isInSidebar(cur)) return@outer
                 val vh = recyclerFollowing.findViewHolderForAdapterPosition(0)
                 if (vh != null) {
                     vh.itemView.requestFocus()
-                    return@post
+                    return@outer
                 }
                 if (recyclerFollowing.adapter?.itemCount == 0) {
                     recyclerFollowing.requestFocus()
-                    return@post
+                    return@outer
                 }
                 recyclerFollowing.scrollToPosition(0)
-                recyclerFollowing.post {
+                recyclerFollowing.post inner@{
+                    val cur2 = currentFocus
+                    if (cur2 != null && !isInSidebar(cur2)) return@inner
                     recyclerFollowing.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recyclerFollowing.requestFocus()
                 }
             }
@@ -763,9 +775,34 @@ class MainActivity : BaseActivity() {
         }
 
         val lastMain = lastMainFocusedView?.get()
-        if (lastMain != null && lastMain.isAttachedToWindow && lastMain.isShown && isInMainContainer(lastMain)) {
+        val tabLayout = fragmentView.findViewById<com.google.android.material.tabs.TabLayout?>(R.id.tab_layout)
+        val lastMainIsInTabs = tabLayout != null && lastMain != null && FocusTreeUtils.isDescendantOf(lastMain, tabLayout)
+        if (!lastMainIsInTabs && lastMain != null && lastMain.isAttachedToWindow && lastMain.isShown && isInMainContainer(lastMain)) {
             lastMain.requestFocus()
             return true
+        }
+
+        // Prefer entering the current page content (cards) for TabLayout+ViewPager pages.
+        // This avoids landing on the tab strip when content is available but not yet laid out.
+        if (tabLayout?.isShown == true) {
+            when (rootFragment) {
+                is VideoGridTabSwitchFocusHost -> {
+                    rootFragment.requestFocusCurrentPageFirstCardFromContentSwitch()
+                    return true
+                }
+
+                is LiveGridTabSwitchFocusHost -> {
+                    rootFragment.requestFocusCurrentPageFirstCardFromContentSwitch()
+                    return true
+                }
+            }
+        }
+        if (rootFragment is MyFragment) {
+            val target = rootFragment.childFragmentManager.findFragmentById(R.id.my_container) as? MyTabContentSwitchFocusHost
+            if (target != null) {
+                target.requestFocusCurrentPageFirstItemFromContentSwitch()
+                return true
+            }
         }
 
         val recycler =
@@ -773,21 +810,24 @@ class MainActivity : BaseActivity() {
                 ?: fragmentView.findViewById<RecyclerView?>(R.id.recycler)
 
         if (recycler != null) {
-            recycler.post {
+            recycler.post outer@{
+                val cur = currentFocus
+                if (cur != null && !isInSidebar(cur)) return@outer
                 val vh = recycler.findViewHolderForAdapterPosition(0)
                 if (vh != null) {
                     vh.itemView.requestFocus()
-                    return@post
+                    return@outer
                 }
                 recycler.scrollToPosition(0)
-                recycler.post {
+                recycler.post inner@{
+                    val cur2 = currentFocus
+                    if (cur2 != null && !isInSidebar(cur2)) return@inner
                     recycler.findViewHolderForAdapterPosition(0)?.itemView?.requestFocus() ?: recycler.requestFocus()
                 }
             }
             return true
         }
 
-        val tabLayout = fragmentView.findViewById<com.google.android.material.tabs.TabLayout?>(R.id.tab_layout)
         if (tabLayout != null) {
             val tabStrip = tabLayout.getChildAt(0) as? ViewGroup
             val pos = tabLayout.selectedTabPosition.takeIf { it >= 0 } ?: 0
