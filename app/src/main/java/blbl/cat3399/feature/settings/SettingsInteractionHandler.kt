@@ -568,6 +568,22 @@ class SettingsInteractionHandler(
                 }
             }
 
+            SettingId.PlayerRenderView -> {
+                val options = listOf("SurfaceView", "TextureView")
+                showChoiceDialog(
+                    title = "渲染视图",
+                    items = options,
+                    current = SettingsText.renderViewText(prefs.playerRenderViewType),
+                ) { selected ->
+                    prefs.playerRenderViewType =
+                        when (selected) {
+                            "TextureView" -> blbl.cat3399.core.prefs.AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW
+                            else -> blbl.cat3399.core.prefs.AppPrefs.PLAYER_RENDER_VIEW_SURFACE_VIEW
+                        }
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
             SettingId.PlayerOsdButtons -> showPlayerOsdButtonsDialog(sectionIndex = state.currentSectionIndex, focusId = entry.id)
 
             SettingId.PlayerDebugEnabled -> {

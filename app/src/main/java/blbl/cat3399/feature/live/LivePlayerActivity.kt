@@ -22,6 +22,7 @@ import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Danmaku
 import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.BaseActivity
 import blbl.cat3399.core.ui.DoubleBackToExitHandler
@@ -89,9 +90,15 @@ class LivePlayerActivity : BaseActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PlayerOsdSizing.applyTheme(this)
-        binding = ActivityPlayerBinding.inflate(layoutInflater)
+        val prefs = BiliClient.prefs
+        val root =
+            layoutInflater.inflate(
+                if (prefs.playerRenderViewType == AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW) blbl.cat3399.R.layout.activity_player_texture else blbl.cat3399.R.layout.activity_player,
+                null,
+            )
+        binding = ActivityPlayerBinding.bind(root)
         setContentView(binding.root)
-        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+        Immersive.apply(this, prefs.fullscreenEnabled)
         recomputeFixedAutoScaleIfWindowChanged(force = false)
         PlayerUiMode.applyLive(this, binding, fixedAutoScale = fixedAutoScale)
 

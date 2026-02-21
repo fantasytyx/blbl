@@ -128,6 +128,31 @@ class AppPrefs(context: Context) {
         get() = prefs.getString(KEY_PLAYER_CODEC, "AVC") ?: "AVC"
         set(value) = prefs.edit().putString(KEY_PLAYER_CODEC, value).apply()
 
+    var playerRenderViewType: String
+        get() {
+            val raw = prefs.getString(KEY_PLAYER_RENDER_VIEW, PLAYER_RENDER_VIEW_SURFACE_VIEW) ?: PLAYER_RENDER_VIEW_SURFACE_VIEW
+            val v = raw.trim()
+            return when (v) {
+                PLAYER_RENDER_VIEW_SURFACE_VIEW,
+                PLAYER_RENDER_VIEW_TEXTURE_VIEW,
+                -> v
+
+                else -> PLAYER_RENDER_VIEW_SURFACE_VIEW
+            }
+        }
+        set(value) {
+            val v = value.trim()
+            val normalized =
+                when (v) {
+                    PLAYER_RENDER_VIEW_SURFACE_VIEW,
+                    PLAYER_RENDER_VIEW_TEXTURE_VIEW,
+                    -> v
+
+                    else -> PLAYER_RENDER_VIEW_SURFACE_VIEW
+                }
+            prefs.edit().putString(KEY_PLAYER_RENDER_VIEW, normalized).apply()
+        }
+
     var playerPreferredAudioId: Int
         get() = prefs.getInt(KEY_PLAYER_AUDIO_ID, 30280)
         set(value) = prefs.edit().putInt(KEY_PLAYER_AUDIO_ID, value).apply()
@@ -432,6 +457,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_PREFERRED_QN = "player_preferred_qn"
         private const val KEY_PLAYER_PREFERRED_QN_PORTRAIT = "player_preferred_qn_portrait"
         private const val KEY_PLAYER_CODEC = "player_codec"
+        private const val KEY_PLAYER_RENDER_VIEW = "player_render_view"
         private const val KEY_PLAYER_AUDIO_ID = "player_audio_id"
         private const val KEY_PLAYER_CDN_PREFERENCE = "player_cdn_preference"
         private const val KEY_SUBTITLE_LANG = "subtitle_lang"
@@ -465,6 +491,9 @@ class AppPrefs(context: Context) {
 
         const val PLAYER_CDN_BILIVIDEO = "bilivideo"
         const val PLAYER_CDN_MCDN = "mcdn"
+
+        const val PLAYER_RENDER_VIEW_SURFACE_VIEW = "surface_view"
+        const val PLAYER_RENDER_VIEW_TEXTURE_VIEW = "texture_view"
 
         const val PLAYER_PLAYBACK_MODE_NONE = "none"
         const val PLAYER_PLAYBACK_MODE_LOOP_ONE = "loop_one"

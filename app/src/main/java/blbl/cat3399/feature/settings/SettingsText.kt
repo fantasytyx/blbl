@@ -74,6 +74,12 @@ object SettingsText {
             else -> "倍率加速"
         }
 
+    fun renderViewText(code: String): String =
+        when (code) {
+            blbl.cat3399.core.prefs.AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW -> "TextureView"
+            else -> "SurfaceView"
+        }
+
     fun downKeyOsdFocusTargetText(code: String): String =
         when (code) {
             blbl.cat3399.core.prefs.AppPrefs.PLAYER_DOWN_KEY_OSD_FOCUS_PREV -> "上一个"

@@ -552,9 +552,15 @@ class PlayerActivity : BaseActivity() {
         super.onCreate(savedInstanceState)
         PlayerOsdSizing.applyTheme(this)
         ActivityStackLimiter.register(group = ACTIVITY_STACK_GROUP, activity = this, maxDepth = ACTIVITY_STACK_MAX_DEPTH)
-        binding = ActivityPlayerBinding.inflate(layoutInflater)
+        val prefs = BiliClient.prefs
+        val root =
+            layoutInflater.inflate(
+                if (prefs.playerRenderViewType == AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW) R.layout.activity_player_texture else R.layout.activity_player,
+                null,
+            )
+        binding = ActivityPlayerBinding.bind(root)
         setContentView(binding.root)
-        Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
+        Immersive.apply(this, prefs.fullscreenEnabled)
         recomputeFixedAutoScaleIfWindowChanged(force = false)
         PlayerUiMode.applyVideo(this, binding, fixedAutoScale = fixedAutoScale)
         binding.topBar.setBackgroundResource(R.drawable.bg_player_top_scrim_strong)
@@ -633,7 +639,6 @@ class PlayerActivity : BaseActivity() {
             return
         }
 
-        val prefs = BiliClient.prefs
         session = PlayerSessionSettings(
             playbackSpeed = prefs.playerSpeed,
             preferCodec = prefs.playerPreferredCodec,
