@@ -518,6 +518,9 @@ internal class PopupHost private constructor(
             // If the dismiss callback immediately opened another modal, do not steal focus back.
             val openedNewModal = modalLayer.childCount > 1
             if (restoreFocus && !openedNewModal) {
+                // Re-park focus right before restoring:
+                // - Covers the non-animated dismiss path.
+                // - In animated dismiss, focus might have moved while the modal was fading out.
                 parkFocusForRestore()
                 val restoredByCallback = runCatching { entry.onRestoreFocus?.invoke() }.getOrNull() == true
                 if (!restoredByCallback) entry.focusReturn.restoreAndClear()

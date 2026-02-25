@@ -6,7 +6,6 @@ import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.InputMethodManager
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.widget.doAfterTextChanged
@@ -23,8 +22,10 @@ import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.GridSpanPolicy
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.enableDpadTabFocus
+import blbl.cat3399.core.ui.hideImeReliable
 import blbl.cat3399.core.ui.popup.AppPopup
 import blbl.cat3399.core.ui.postIfAlive
+import blbl.cat3399.core.ui.showImeReliable
 import blbl.cat3399.core.ui.uiScaler
 import blbl.cat3399.databinding.FragmentSearchBinding
 import blbl.cat3399.feature.following.FollowingGridAdapter
@@ -419,16 +420,13 @@ class SearchRenderer(
             input.showSoftInputOnFocus = true
             input.isCursorVisible = true
             input.isLongClickable = true
-            input.setTextIsSelectable(true)
-
-            input.requestFocus()
-            input.setSelection(input.text?.length ?: 0)
-            // Some TV input methods won't show the IME synchronously; post for reliability.
-            input.postIfAlive(isAlive = { !released }) {
-                if (!input.isFocused) input.requestFocus()
-                input.setSelection(input.text?.length ?: 0)
-                showIme(input)
+            if (input.isInTouchMode) {
+                if (!input.requestFocusFromTouch()) input.requestFocus()
+            } else {
+                input.requestFocus()
             }
+            input.setSelection(input.text?.length ?: 0)
+            input.showImeReliable(isAlive = { !released && imeEditMode })
         }
 
         fun exitImeEditMode() {
@@ -436,8 +434,7 @@ class SearchRenderer(
             input.showSoftInputOnFocus = false
             input.isCursorVisible = false
             input.isLongClickable = false
-            input.setTextIsSelectable(false)
-            hideIme(input)
+            input.hideImeReliable()
         }
 
         input.apply {
@@ -453,7 +450,11 @@ class SearchRenderer(
 
         input.setOnClickListener { enterImeEditMode() }
         input.setOnFocusChangeListener { _, hasFocus ->
-            if (!hasFocus) exitImeEditMode()
+            if (hasFocus) return@setOnFocusChangeListener
+            // Some devices may transiently move focus while IME is being shown; delay exit by one loop.
+            input.postIfAlive(isAlive = { !released }) {
+                if (!input.isFocused) exitImeEditMode()
+            }
         }
         input.setOnKeyListener { _, keyCode, event ->
             if (event.action != KeyEvent.ACTION_DOWN) return@setOnKeyListener false
@@ -705,18 +706,8 @@ class SearchRenderer(
 
     fun hideImeAndClearQueryFocusIfNeeded() {
         if (!binding.tvQuery.hasFocus()) return
-        hideIme(binding.tvQuery)
+        binding.tvQuery.hideImeReliable()
         binding.tvQuery.clearFocus()
-    }
-
-    private fun showIme(view: View) {
-        val imm = view.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
-    }
-
-    private fun hideIme(view: View) {
-        val imm = view.context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        imm.hideSoftInputFromWindow(view.windowToken, 0)
     }
 
     fun focusFirstKey() {
