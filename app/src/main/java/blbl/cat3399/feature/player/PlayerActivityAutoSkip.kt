@@ -406,7 +406,7 @@ internal fun PlayerActivity.scheduleAutoResume(exo: ExoPlayer, candidate: Resume
     dismissAutoResumeHint()
     trace?.log("resume:pending", "src=${candidate.source} raw=${candidate.rawTime}")
 
-    val delayMs = 2_000L
+    val delayMs = 3_000L
     val showAtMs = SystemClock.elapsedRealtime()
     val seekNotBeforeAtMs = showAtMs + delayMs
     val previewDurationMs = exo.duration.takeIf { it > 0 } ?: currentViewDurationMs
