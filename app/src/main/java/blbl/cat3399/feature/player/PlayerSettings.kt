@@ -1,18 +1,20 @@
 package blbl.cat3399.feature.player
 
+import android.util.TypedValue
+import android.view.View
+import androidx.lifecycle.lifecycleScope
+import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.SubtitleView
+import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.popup.AppPopup
-import java.util.Locale
-import android.util.TypedValue
-import androidx.lifecycle.lifecycleScope
-import androidx.media3.ui.CaptionStyleCompat
-import androidx.media3.ui.SubtitleView
 import kotlin.math.abs
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 internal object PlayerSettingKeys {
     const val RESOLUTION = "resolution"
@@ -62,6 +64,7 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
 
 internal fun PlayerActivity.refreshSettings(adapter: PlayerSettingsAdapter) {
     val prefs = BiliClient.prefs
+    val restoreFocusKey = currentSettingsFocusKey()
     adapter.submit(
         listOf(
             PlayerSettingsAdapter.SettingItem(
@@ -130,7 +133,62 @@ internal fun PlayerActivity.refreshSettings(adapter: PlayerSettingsAdapter) {
                 subtitle = if (prefs.playerPersistentBottomProgressEnabled) "开" else "关",
             ),
         ),
+        onCommitted = {
+            val key = restoreFocusKey ?: return@submit
+            restoreSettingsPanelFocusByKey(key)
+        },
     )
+}
+
+private fun PlayerActivity.currentSettingsFocusKey(): String? {
+    if (!isSettingsPanelVisible()) return null
+    val focused = currentFocus ?: return null
+    val holder = binding.recyclerSettings.findContainingViewHolder(focused) ?: return null
+    val pos = holder.bindingAdapterPosition
+    if (pos == RecyclerView.NO_POSITION) return null
+    val adapter = binding.recyclerSettings.adapter as? PlayerSettingsAdapter ?: return null
+    return adapter.currentList.getOrNull(pos)?.key
+}
+
+private fun PlayerActivity.restoreSettingsPanelFocusByKey(key: String): Boolean {
+    if (!isSettingsPanelVisible()) return false
+    val rv = binding.recyclerSettings
+    val adapter = rv.adapter as? PlayerSettingsAdapter ?: return false
+    val targetPos = adapter.currentList.indexOfFirst { it.key == key }
+    if (targetPos !in 0 until adapter.itemCount) return false
+
+    fun requestFocus(view: View?): Boolean {
+        val v = view ?: return false
+        if (!v.isAttachedToWindow || !v.isShown || !v.isEnabled || !v.isFocusable) return false
+        return v.requestFocus()
+    }
+
+    if (requestFocus(rv.findViewHolderForAdapterPosition(targetPos)?.itemView)) return true
+    rv.scrollToPosition(targetPos)
+    if (requestFocus(rv.findViewHolderForAdapterPosition(targetPos)?.itemView)) return true
+    if (requestFocus(rv.getChildAt(0))) return true
+    return false
+}
+
+private inline fun PlayerActivity.showSettingsSingleChoiceDialog(
+    title: CharSequence,
+    items: List<String>,
+    checkedIndex: Int,
+    crossinline onPicked: (index: Int, label: String) -> Unit,
+) {
+    val restoreFocusKey = currentSettingsFocusKey()
+    AppPopup.singleChoice(
+        context = this,
+        title = title,
+        items = items,
+        checkedIndex = checkedIndex,
+        onRestoreFocus = {
+            val key = restoreFocusKey ?: return@singleChoice false
+            restoreSettingsPanelFocusByKey(key)
+        },
+    ) { which, label ->
+        onPicked(which, label)
+    }
 }
 
 internal fun PlayerActivity.showResolutionDialog() {
@@ -149,13 +207,12 @@ internal fun PlayerActivity.showResolutionDialog() {
             ?: session.targetQn.takeIf { it > 0 }
             ?: session.preferredQn
     val currentIndex = docQns.indexOfFirst { it == currentQn }.takeIf { it >= 0 } ?: 0
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "分辨率",
         items = options,
         checkedIndex = currentIndex,
     ) { which, _ ->
-        val qn = docQns.getOrNull(which) ?: return@singleChoice
+        val qn = docQns.getOrNull(which) ?: return@showSettingsSingleChoiceDialog
         session =
             if (qn == session.preferredQn) {
                 session.copy(targetQn = 0)
@@ -182,13 +239,12 @@ internal fun PlayerActivity.showAudioDialog() {
             ?: session.preferAudioId
     val currentIndex = docIds.indexOfFirst { it == currentId }.takeIf { it >= 0 } ?: 0
 
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "音轨",
         items = options,
         checkedIndex = currentIndex,
     ) { which, _ ->
-        val id = docIds.getOrNull(which) ?: return@singleChoice
+        val id = docIds.getOrNull(which) ?: return@showSettingsSingleChoiceDialog
         session =
             if (id == session.preferAudioId) {
                 session.copy(targetAudioId = 0)
@@ -203,8 +259,7 @@ internal fun PlayerActivity.showAudioDialog() {
 internal fun PlayerActivity.showCodecDialog() {
     val options = arrayOf("AVC", "HEVC", "AV1")
     val current = options.indexOf(session.preferCodec).coerceAtLeast(0)
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "视频编码",
         items = options.toList(),
         checkedIndex = current,
@@ -219,8 +274,7 @@ internal fun PlayerActivity.showCodecDialog() {
 internal fun PlayerActivity.showSpeedDialog() {
     val options = arrayOf("0.50x", "0.75x", "1.00x", "1.25x", "1.50x", "2.00x")
     val current = options.indexOf(String.format(Locale.US, "%.2fx", session.playbackSpeed)).let { if (it >= 0) it else 2 }
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "播放速度",
         items = options.toList(),
         checkedIndex = current,
@@ -301,8 +355,7 @@ internal fun PlayerActivity.showPlaybackModeDialog() {
         )
     val currentLabel = playbackModeLabel(resolvedPlaybackMode())
     val checked = items.indexOf(currentLabel).coerceAtLeast(0)
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "播放模式",
         items = items,
         checkedIndex = checked,
@@ -406,8 +459,7 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
             reloadStream(keepPosition = true)
         }
     }
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "字幕语言（本次播放）",
         items = items,
         checkedIndex = checked,
@@ -439,8 +491,7 @@ internal fun PlayerActivity.showSubtitleTextSizeDialog() {
         options.indices.minByOrNull { abs(options[it].toFloat() - session.subtitleTextSizeSp) }
             ?: options.indexOf(26).takeIf { it >= 0 }
             ?: 0
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "字幕字体大小",
         items = items.toList(),
         checkedIndex = current,
@@ -483,8 +534,7 @@ internal fun PlayerActivity.showDanmakuOpacityDialog() {
     val options = (20 downTo 1).map { it / 20f }
     val items = options.map { String.format(Locale.US, "%.2f", it) }
     val current = options.indices.minByOrNull { kotlin.math.abs(options[it] - session.danmaku.opacity) } ?: 0
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "弹幕透明度",
         items = items,
         checkedIndex = current,
@@ -503,8 +553,7 @@ internal fun PlayerActivity.showDanmakuTextSizeDialog() {
         options.indices.minByOrNull { kotlin.math.abs(options[it].toFloat() - session.danmaku.textSizeSp) }
             ?: options.indexOf(18).takeIf { it >= 0 }
             ?: 0
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "弹幕字体大小",
         items = items.toList(),
         checkedIndex = current,
@@ -520,8 +569,7 @@ internal fun PlayerActivity.showDanmakuSpeedDialog() {
     val options = (1..10).toList()
     val items = options.map { it.toString() }
     val current = options.indexOf(session.danmaku.speedLevel).let { if (it >= 0) it else 3 }
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "弹幕速度(1~10)",
         items = items,
         checkedIndex = current,
@@ -550,8 +598,7 @@ internal fun PlayerActivity.showDanmakuAreaDialog() {
     val current =
         options.indices.minByOrNull { kotlin.math.abs(options[it].first - session.danmaku.area) }
             ?: options.lastIndex
-    AppPopup.singleChoice(
-        context = this,
+    showSettingsSingleChoiceDialog(
         title = "弹幕区域",
         items = items,
         checkedIndex = current,

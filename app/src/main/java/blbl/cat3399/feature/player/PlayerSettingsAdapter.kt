@@ -28,8 +28,10 @@ class PlayerSettingsAdapter(
         notifyItemRangeChanged(0, itemCount)
     }
 
-    fun submit(list: List<SettingItem>) {
-        submitList(list.toList())
+    fun submit(list: List<SettingItem>, onCommitted: (() -> Unit)? = null) {
+        submitList(list.toList()) {
+            onCommitted?.invoke()
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Vh {

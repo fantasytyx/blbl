@@ -169,6 +169,7 @@ object AppPopup {
         checkedIndex: Int,
         cancelable: Boolean = true,
         onDismiss: (() -> Unit)? = null,
+        onRestoreFocus: (() -> Boolean)? = null,
         onPicked: (index: Int, label: String) -> Unit,
     ): PopupHandle? {
         return runOnMainOrPost {
@@ -227,6 +228,7 @@ object AppPopup {
                         )
                     },
                     onDismiss = onDismiss,
+                    onRestoreFocus = onRestoreFocus,
                 )
 
             handle

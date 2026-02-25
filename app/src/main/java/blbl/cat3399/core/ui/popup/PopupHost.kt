@@ -39,6 +39,8 @@ internal class PopupHost private constructor(
     private var imeInsets = Insets.NONE
 
     private var modalEntry: ModalEntry? = null
+    private var focusParkingView: View? = null
+    private var focusParkingListener: ViewTreeObserver.OnGlobalFocusChangeListener? = null
 
     private data class ModalEntry(
         val rootView: View,
@@ -49,7 +51,70 @@ internal class PopupHost private constructor(
         val backCallback: OnBackPressedCallback,
         val focusListener: ViewTreeObserver.OnGlobalFocusChangeListener,
         val onDismiss: (() -> Unit)?,
+        val onRestoreFocus: (() -> Boolean)?,
+        var dismissing: Boolean = false,
     )
+
+    private fun ensureFocusParkingView(): View {
+        val existing = focusParkingView
+        if (existing != null) return existing
+
+        val view =
+            View(activity).apply {
+                alpha = 0f
+                isClickable = false
+                isFocusable = false
+                isFocusableInTouchMode = false
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+        hostView.addView(
+            view,
+            FrameLayout.LayoutParams(
+                /* width= */ 1,
+                /* height= */ 1,
+                /* gravity= */ Gravity.START or Gravity.TOP,
+            ),
+        )
+        focusParkingView = view
+        return view
+    }
+
+    private fun parkFocusForRestore() {
+        val parking = ensureFocusParkingView()
+        parking.isFocusable = true
+        parking.isFocusableInTouchMode = true
+
+        if (focusParkingListener == null) {
+            val listener =
+                ViewTreeObserver.OnGlobalFocusChangeListener { _, newFocus ->
+                    val v = focusParkingView ?: return@OnGlobalFocusChangeListener
+                    if (newFocus == null || newFocus === v) return@OnGlobalFocusChangeListener
+                    disableFocusParking()
+                }
+            focusParkingListener = listener
+            runCatching { contentRoot.viewTreeObserver.addOnGlobalFocusChangeListener(listener) }
+        }
+
+        // Best-effort: even if focus restore fails (e.g. underlying list is updating),
+        // keeping focus on this invisible view prevents the system from temporarily
+        // falling back to an unrelated control (like the player's Back button).
+        if (!parking.requestFocus()) {
+            parking.post { parking.requestFocus() }
+        }
+    }
+
+    private fun disableFocusParking() {
+        focusParkingView?.let { v ->
+            v.isFocusable = false
+            v.isFocusableInTouchMode = false
+        }
+
+        val listener = focusParkingListener
+        focusParkingListener = null
+        if (listener != null) {
+            runCatching { contentRoot.viewTreeObserver.removeOnGlobalFocusChangeListener(listener) }
+        }
+    }
 
     fun showModal(
         title: CharSequence?,
@@ -60,6 +125,7 @@ internal class PopupHost private constructor(
         autoFocus: Boolean = true,
         onModalAttached: ((modalRoot: View) -> Unit)? = null,
         onDismiss: (() -> Unit)? = null,
+        onRestoreFocus: (() -> Boolean)? = null,
     ): PopupHandle {
         checkMainThread()
 
@@ -161,6 +227,7 @@ internal class PopupHost private constructor(
             ViewTreeObserver.OnGlobalFocusChangeListener { oldFocus, newFocus ->
                 val entry = modalEntry
                 if (entry == null) return@OnGlobalFocusChangeListener
+                if (entry.dismissing) return@OnGlobalFocusChangeListener
                 val modalRoot = entry.rootView
 
                 if (!modalRoot.isAttachedToWindow) return@OnGlobalFocusChangeListener
@@ -227,6 +294,7 @@ internal class PopupHost private constructor(
                 backCallback = backCallback,
                 focusListener = focusListener,
                 onDismiss = onDismiss,
+                onRestoreFocus = onRestoreFocus,
             )
 
         return object : PopupHandle {
@@ -411,25 +479,53 @@ internal class PopupHost private constructor(
     ) {
         checkMainThread()
         val entry = modalEntry ?: return
-        modalEntry = null
-
-        runCatching { entry.backCallback.remove() }
-        runCatching { contentRoot.viewTreeObserver.removeOnGlobalFocusChangeListener(entry.focusListener) }
-
         val root = entry.rootView
         val card = root.findViewById<View>(R.id.card) ?: root
+
+        fun finalizeDismiss() {
+            if (modalEntry === entry) {
+                modalEntry = null
+            }
+            runCatching { entry.backCallback.remove() }
+            runCatching { contentRoot.viewTreeObserver.removeOnGlobalFocusChangeListener(entry.focusListener) }
+
+            // Invoke callbacks before restoring focus to avoid causing a focus "double jump" when
+            // the underlying UI updates (e.g. list refresh) and would otherwise temporarily lose focus.
+            entry.onDismiss?.invoke()
+
+            // If the dismiss callback immediately opened another modal, do not steal focus back.
+            val openedNewModal = modalLayer.childCount > 1
+            if (restoreFocus && !openedNewModal) {
+                parkFocusForRestore()
+                val restoredByCallback = runCatching { entry.onRestoreFocus?.invoke() }.getOrNull() == true
+                if (!restoredByCallback) entry.focusReturn.restoreAndClear()
+            }
+            runCatching { (root.parent as? ViewGroup)?.removeView(root) }
+        }
 
         root.animate().cancel()
         card.animate().cancel()
 
         if (!animate) {
-            runCatching { (root.parent as? ViewGroup)?.removeView(root) }
-            entry.onDismiss?.invoke()
-            if (restoreFocus) entry.focusReturn.restoreAndClear()
+            finalizeDismiss()
             return
         }
 
+        if (entry.dismissing) return
+        entry.dismissing = true
+
+        if (restoreFocus) {
+            // While the modal is being removed, the currently focused view inside it may get detached.
+            // If focus becomes temporarily null, the system can "fallback" to an unrelated control
+            // (e.g. the player's Back button), causing a visible one-frame focus flicker.
+            // Park focus on an invisible view early so the modal can disappear without triggering
+            // a system-level fallback focus target.
+            parkFocusForRestore()
+        }
+
         // Animate out then remove.
+        // During dismiss we disable the focus trap (see focusListener early-return) and instead
+        // rely on focus parking to prevent a system-level fallback focus target flicker.
         root.animate().alpha(0f).setDuration(140L).start()
         card.animate()
             .alpha(0f)
@@ -437,9 +533,7 @@ internal class PopupHost private constructor(
             .scaleY(0.98f)
             .setDuration(140L)
             .withEndAction {
-                runCatching { (root.parent as? ViewGroup)?.removeView(root) }
-                entry.onDismiss?.invoke()
-                if (restoreFocus) entry.focusReturn.restoreAndClear()
+                finalizeDismiss()
             }
             .start()
     }
