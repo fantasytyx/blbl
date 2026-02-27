@@ -83,7 +83,10 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="14dp"
         android:layout_marginBottom="10dp"
+        android:stateListAnimator="@animator/blbl_focus_scale"
         android:text="@string/my_btn_continue"
+        app:strokeColor="?attr/blblFocusStrokeColor"
+        app:strokeWidth="2dp"
         app:layout_constraintBottom_toBottomOf="@id/iv_cover"
         app:layout_constraintStart_toEndOf="@id/iv_cover" />
 
@@ -93,7 +96,10 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="12dp"
         android:layout_marginBottom="10dp"
+        android:stateListAnimator="@animator/blbl_focus_scale"
         android:text="@string/my_btn_followed"
+        app:strokeColor="?attr/blblFocusStrokeColor"
+        app:strokeWidth="2dp"
         app:layout_constraintBottom_toBottomOf="@id/iv_cover"
         app:layout_constraintStart_toEndOf="@id/btn_primary" />
 

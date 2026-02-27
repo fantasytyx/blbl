@@ -60,15 +60,15 @@
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/btn_sidebar_settings"
-            android:layout_width="@dimen/sidebar_settings_size"
-            android:layout_height="@dimen/sidebar_settings_size"
+            android:layout_width="@dimen/sidebar_main_settings_size"
+            android:layout_height="@dimen/sidebar_main_settings_size"
             android:layout_gravity="center_horizontal"
             android:layout_marginBottom="@dimen/sidebar_settings_margin_bottom"
             android:contentDescription="@string/tab_settings"
             android:clickable="true"
             android:focusable="true"
             android:stateListAnimator="@animator/blbl_focus_scale"
-            android:padding="@dimen/sidebar_settings_padding"
+            android:padding="@dimen/sidebar_main_settings_padding"
             app:cardBackgroundColor="@android:color/transparent"
             app:cardCornerRadius="10dp"
             app:cardElevation="0dp"

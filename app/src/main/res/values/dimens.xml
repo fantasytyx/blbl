@@ -10,6 +10,8 @@
     <dimen name="sidebar_nav_margin_top">16dp</dimen>
     <dimen name="sidebar_settings_size">44dp</dimen>
     <dimen name="sidebar_settings_padding">6dp</dimen>
+    <dimen name="sidebar_main_settings_size">34dp</dimen>
+    <dimen name="sidebar_main_settings_padding">4.5dp</dimen>
     <dimen name="sidebar_settings_margin_bottom">12dp</dimen>
 
     <!-- Sidebar nav item -->

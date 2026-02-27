@@ -51,6 +51,8 @@
                 android:text="关注"
                 android:textAllCaps="false"
                 app:cornerRadius="20dp"
+                app:strokeColor="?attr/blblFocusStrokeColor"
+                app:strokeWidth="2dp"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintTop_toTopOf="@id/iv_avatar" />
 
