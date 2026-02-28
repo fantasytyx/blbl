@@ -71,6 +71,7 @@ enum class SettingId(
     QqGroup("qq_group"),
     LogTag("log_tag"),
     ExportLogs("export_logs"),
+    UploadLogs("upload_logs"),
     CheckUpdate("check_update"),
 
     // 设备信息

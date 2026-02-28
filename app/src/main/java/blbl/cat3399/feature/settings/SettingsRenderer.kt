@@ -260,6 +260,7 @@ class SettingsRenderer(
                     SettingEntry(SettingId.QqGroup, "QQ交流群", SettingsConstants.QQ_GROUP, null),
                     SettingEntry(SettingId.LogTag, "日志标签", "BLBL", "用于 Logcat 过滤"),
                     SettingEntry(SettingId.ExportLogs, "导出日志", "选择文件夹", "导出日志zip到你选择的文件夹"),
+                    SettingEntry(SettingId.UploadLogs, "上传日志", "点击上传", "打包并上传日志zip到开发者（含设备/版本等元数据）"),
                     aboutUpdateEntry(),
                 )
 

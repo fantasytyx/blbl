@@ -1,10 +1,13 @@
 package blbl.cat3399.core.prefs
 
 import android.content.Context
+import android.provider.Settings
 import org.json.JSONArray
+import java.util.UUID
 import kotlin.math.roundToInt
 
 class AppPrefs(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("blbl_prefs", Context.MODE_PRIVATE)
 
     var disclaimerAccepted: Boolean
@@ -80,6 +83,28 @@ class AppPrefs(context: Context) {
     var deviceBuvid: String
         get() = prefs.getString(KEY_DEVICE_BUVID, null) ?: generateBuvid().also { prefs.edit().putString(KEY_DEVICE_BUVID, it).apply() }
         set(value) = prefs.edit().putString(KEY_DEVICE_BUVID, value.trim()).apply()
+
+    /**
+     * Stable per-device UUID for diagnostics (e.g. log uploads).
+     *
+     * - Pref-backed (memory): once created/derived, keep using it.
+     * - Prefer deriving from ANDROID_ID (stable across reinstall on most devices).
+     * - Fallback to random UUID when ANDROID_ID is unavailable/invalid.
+     */
+    var deviceUuid: String
+        get() {
+            val cached =
+                prefs.getString(KEY_DEVICE_UUID, null)
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?.takeIf { isValidUuid(it) }
+            if (cached != null) return cached
+
+            val derived = deriveDeviceUuid()
+            prefs.edit().putString(KEY_DEVICE_UUID, derived).apply()
+            return derived
+        }
+        set(value) = prefs.edit().putString(KEY_DEVICE_UUID, value.trim()).apply()
 
     var buvidActivatedMid: Long
         get() = prefs.getLong(KEY_BUVID_ACTIVATED_MID, 0L)
@@ -518,6 +543,7 @@ class AppPrefs(context: Context) {
         private const val KEY_UA = "ua"
         private const val KEY_IPV4_ONLY_ENABLED = "ipv4_only_enabled"
         private const val KEY_DEVICE_BUVID = "device_buvid"
+        private const val KEY_DEVICE_UUID = "device_uuid"
         private const val KEY_BUVID_ACTIVATED_MID = "buvid_activated_mid"
         private const val KEY_BUVID_ACTIVATED_EPOCH_DAY = "buvid_activated_epoch_day"
         private const val KEY_SIDEBAR_SIZE = "sidebar_size"
@@ -661,5 +687,28 @@ class AppPrefs(context: Context) {
             val hex = buildString(md5.size * 2) { md5.forEach { append(String.format(java.util.Locale.US, "%02x", it)) } }
             return "XY${hex[2]}${hex[12]}${hex[22]}$hex"
         }
+
+        private fun isValidUuid(text: String): Boolean {
+            return runCatching {
+                UUID.fromString(text.trim())
+                true
+            }.getOrDefault(false)
+        }
+    }
+
+    private fun deriveDeviceUuid(): String {
+        val androidId =
+            runCatching {
+                Settings.Secure.getString(appContext.contentResolver, Settings.Secure.ANDROID_ID)
+            }.getOrNull()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+
+        if (!androidId.isNullOrBlank()) {
+            val name = "blbl:device_uuid:$androidId"
+            return UUID.nameUUIDFromBytes(name.toByteArray(Charsets.UTF_8)).toString()
+        }
+
+        return UUID.randomUUID().toString()
     }
 }

@@ -516,7 +516,7 @@ class MainActivity : BaseActivity() {
             AppPopup.confirm(
                 context = this,
                 title = "检测到上次异常退出",
-                message = "为了帮助开发者定位问题，请到「设置 - 关于应用 - 导出日志」导出日志并发送给开发者。",
+                message = "为了帮助开发者定位问题，请到「设置 - 关于应用」导出或上传日志。",
                 positiveText = "打开设置",
                 negativeText = "知道了",
                 onPositive = { startActivity(Intent(this, SettingsActivity::class.java)) },

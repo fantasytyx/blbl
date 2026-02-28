@@ -463,7 +463,6 @@ class UpDetailActivity : BaseActivity() {
         fun tryFocusTabView(view: android.view.View?): Boolean {
             if (view == null) return false
             view.isFocusable = true
-            view.isFocusableInTouchMode = true
             return view.requestFocus()
         }
 

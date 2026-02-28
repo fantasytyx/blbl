@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.text.InputType
 import android.widget.TextView
 import androidx.activity.result.ActivityResult
@@ -15,6 +16,7 @@ import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.BuildConfig
 import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.log.LogExporter
+import blbl.cat3399.core.log.LogUploadClient
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.theme.LauncherAliasManager
 import blbl.cat3399.core.ui.AppToast
@@ -29,14 +31,18 @@ import blbl.cat3399.ui.MainActivity
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import java.io.File
+import java.text.SimpleDateFormat
 import java.util.ArrayDeque
+import java.util.Date
 import java.util.Locale
+import org.json.JSONObject
 
 class SettingsInteractionHandler(
     private val activity: SettingsActivity,
@@ -49,6 +55,7 @@ class SettingsInteractionHandler(
     private var testUpdateJob: Job? = null
     private var testUpdateCheckJob: Job? = null
     private var exportLogsJob: Job? = null
+    private var uploadLogsJob: Job? = null
     private var clearCacheJob: Job? = null
     private var cacheSizeJob: Job? = null
 
@@ -82,9 +89,23 @@ class SettingsInteractionHandler(
         exportLogsJob =
             activity.lifecycleScope.launch {
                 AppToast.show(activity, "正在导出日志…")
+                val nowMs = System.currentTimeMillis()
+                val deviceUuid = BiliClient.prefs.deviceUuid
+                val metaJson = buildUploadMetaJson(nowMs = nowMs, deviceUuid = deviceUuid)
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        LogExporter.exportToTreeUri(activity, uri)
+                        LogExporter.exportToTreeUri(
+                            context = activity,
+                            treeUri = uri,
+                            nowMs = nowMs,
+                            extras =
+                                listOf(
+                                    LogExporter.ZipExtra(
+                                        path = "meta.json",
+                                        bytes = metaJson.toByteArray(Charsets.UTF_8),
+                                    ),
+                                ),
+                        )
                     }
                 }.onSuccess { result ->
                     AppToast.showLong(activity, "已导出：${result.fileName}（${result.includedFiles}个文件）")
@@ -101,9 +122,22 @@ class SettingsInteractionHandler(
         exportLogsJob =
             activity.lifecycleScope.launch {
                 AppToast.show(activity, "正在导出日志到本地…")
+                val nowMs = System.currentTimeMillis()
+                val deviceUuid = BiliClient.prefs.deviceUuid
+                val metaJson = buildUploadMetaJson(nowMs = nowMs, deviceUuid = deviceUuid)
                 runCatching {
                     withContext(Dispatchers.IO) {
-                        LogExporter.exportToLocalFile(activity)
+                        LogExporter.exportToLocalFile(
+                            context = activity,
+                            nowMs = nowMs,
+                            extras =
+                                listOf(
+                                    LogExporter.ZipExtra(
+                                        path = "meta.json",
+                                        bytes = metaJson.toByteArray(Charsets.UTF_8),
+                                    ),
+                                ),
+                        )
                     }
                 }.onSuccess { result ->
                     val path = result.file.absolutePath
@@ -114,6 +148,202 @@ class SettingsInteractionHandler(
                     AppToast.showLong(activity, "导出失败：$msg")
                 }
             }
+    }
+
+    private fun showUploadLogsDialog() {
+        if (uploadLogsJob?.isActive == true) {
+            AppToast.show(activity, "正在上传…")
+            return
+        }
+
+        AppPopup.confirm(
+            context = activity,
+            title = "上传日志",
+            message =
+                "将打包并上传日志zip到开发者，用于定位问题。\n\n" +
+                    "日志中会包含：设备信息、版本信息、是否登录等元数据；以及最近的运行日志/崩溃堆栈。\n\n" +
+                    "注意：日志可能包含隐私内容（例如账号信息、播放记录等），请确认后再上传。",
+            positiveText = "上传",
+            negativeText = "取消",
+            cancelable = true,
+            onPositive = { startUploadLogs() },
+        )
+    }
+
+    private fun startUploadLogs() {
+        uploadLogsJob?.cancel()
+        val popup =
+            AppPopup.progress(
+                context = activity,
+                title = "上传日志",
+                status = "准备中…",
+                negativeText = "取消",
+                cancelable = false,
+                onNegative = { uploadLogsJob?.cancel() },
+            )
+
+        uploadLogsJob =
+            activity.lifecycleScope.launch {
+                var exportedFile: File? = null
+                try {
+                    val nowMs = System.currentTimeMillis()
+                    val deviceUuid = BiliClient.prefs.deviceUuid
+                    val ts = formatUploadTimestamp(nowMs)
+                    val fileName = "${deviceUuid}-${ts}.zip"
+                    val metaJson = buildUploadMetaJson(nowMs = nowMs, deviceUuid = deviceUuid)
+
+                    popup?.updateProgress(null)
+                    popup?.updateStatus("打包中…")
+                    val export =
+                        withContext(Dispatchers.IO) {
+                            LogExporter.exportToLocalFile(
+                                context = activity,
+                                nowMs = nowMs,
+                                fileNameOverride = fileName,
+                                extras =
+                                    listOf(
+                                        LogExporter.ZipExtra(
+                                            path = "meta.json",
+                                            bytes = metaJson.toByteArray(Charsets.UTF_8),
+                                        ),
+                                    ),
+                            )
+                        }
+                    exportedFile = export.file
+
+                    currentCoroutineContext().ensureActive()
+                    popup?.updateProgress(null)
+                    popup?.updateStatus("上传中…")
+                    val uploaded =
+                        withContext(Dispatchers.IO) {
+                            LogUploadClient.uploadZip(
+                                file = export.file,
+                                fileName = export.fileName,
+                            )
+                        }
+
+                    popup?.dismiss()
+                    showUploadLogsSuccessPopup(
+                        key = uploaded.key,
+                        id = uploaded.id,
+                        fileName = export.fileName,
+                        deviceUuid = deviceUuid,
+                    )
+                } catch (_: CancellationException) {
+                    popup?.dismiss()
+                } catch (t: Throwable) {
+                    popup?.dismiss()
+                    AppLog.w("Settings", "upload logs failed", t)
+                    val msg = t.message?.takeIf { it.isNotBlank() } ?: "未知错误"
+                    AppToast.showLong(activity, "上传失败：$msg")
+                } finally {
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        exportedFile?.let { runCatching { it.delete() } }
+                    }
+                }
+            }
+    }
+
+    private fun showUploadLogsSuccessPopup(
+        key: String,
+        id: String?,
+        fileName: String,
+        deviceUuid: String,
+    ) {
+        val body =
+            buildString {
+                append("文件：")
+                append(fileName)
+                append('\n')
+                append("Key：")
+                append(key)
+                if (!id.isNullOrBlank()) {
+                    append('\n')
+                    append("ID：")
+                    append(id)
+                }
+                append('\n')
+                append("设备UUID：")
+                append(deviceUuid)
+            }
+
+        AppPopup.custom(
+            context = activity,
+            title = "上传成功",
+            cancelable = true,
+            actions =
+                listOf(
+                    PopupAction(role = PopupActionRole.NEGATIVE, text = "关闭"),
+                    PopupAction(role = PopupActionRole.NEUTRAL, text = "复制Key") {
+                        copyToClipboard(label = "日志上传Key", text = key, toastText = "已复制Key")
+                    },
+                    PopupAction(role = PopupActionRole.POSITIVE, text = "复制UUID") {
+                        copyToClipboard(label = "设备UUID", text = deviceUuid, toastText = "已复制UUID")
+                    },
+                ),
+            preferredActionRole = PopupActionRole.NEUTRAL,
+            content = { dialogContext ->
+                val tv =
+                    android.view.LayoutInflater.from(dialogContext)
+                        .inflate(blbl.cat3399.R.layout.view_popup_message, null, false) as TextView
+                tv.text = body
+                tv
+            },
+        )
+    }
+
+    private fun formatUploadTimestamp(nowMs: Long): String {
+        val sdf = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US)
+        return runCatching { sdf.format(Date(nowMs)) }.getOrNull()?.takeIf { it.isNotBlank() } ?: nowMs.toString()
+    }
+
+    private fun buildUploadMetaJson(
+        nowMs: Long,
+        deviceUuid: String,
+    ): String {
+        val tzId = runCatching { java.util.TimeZone.getDefault().id }.getOrNull().orEmpty()
+        val locale = runCatching { Locale.getDefault() }.getOrNull()
+        val localeTag = runCatching { locale?.toLanguageTag() }.getOrNull().orEmpty()
+
+        val json =
+            JSONObject()
+                .put("schema", 1)
+                .put("device_uuid", deviceUuid)
+                .put("export_at_ms", nowMs)
+                .put("export_at", formatUploadTimestamp(nowMs))
+                .put("time_zone", tzId)
+                .put("locale", localeTag)
+                .put(
+                    "app",
+                    JSONObject()
+                        .put("package", BuildConfig.APPLICATION_ID)
+                        .put("version_name", BuildConfig.VERSION_NAME)
+                        .put("version_code", BuildConfig.VERSION_CODE)
+                        .put("build_type", BuildConfig.BUILD_TYPE)
+                        .put("debug", BuildConfig.DEBUG),
+                )
+                .put(
+                    "device",
+                    JSONObject()
+                        .put("manufacturer", Build.MANUFACTURER)
+                        .put("model", Build.MODEL)
+                        .put("sdk_int", Build.VERSION.SDK_INT)
+                        .put("release", Build.VERSION.RELEASE)
+                        .put("abi", Build.SUPPORTED_ABIS.firstOrNull().orEmpty()),
+                )
+                .put(
+                    "account",
+                    JSONObject()
+                        .put("is_logged_in", BiliClient.cookies.hasSessData()),
+                )
+                .put(
+                    "prefs",
+                    JSONObject()
+                        .put("ipv4_only_enabled", BiliClient.prefs.ipv4OnlyEnabled)
+                        .put("device_buvid", BiliClient.prefs.deviceBuvid),
+                )
+
+        return json.toString(2)
     }
 
     private fun canOpenDocumentTree(): Boolean {
@@ -190,6 +420,10 @@ class SettingsInteractionHandler(
                     AppLog.w("Settings", "open export logs picker failed; fallback to local export", t)
                     exportLogsToLocalFile()
                 }
+            }
+
+            SettingId.UploadLogs -> {
+                showUploadLogsDialog()
             }
 
             SettingId.FullscreenEnabled -> {
