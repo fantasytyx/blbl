@@ -40,6 +40,7 @@
 
         <item name="android:colorBackground">@color/blbl_bg</item>
         <item name="colorBackground">@color/blbl_bg</item>
+        <item name="blblContentBackground">?attr/colorBackground</item>
         <item name="colorSurface">@color/blbl_surface</item>
         <item name="colorOnSurface">@color/blbl_text</item>
 
@@ -57,6 +58,7 @@
 
         <item name="android:colorBackground">@color/blbl_bg_tv_pink</item>
         <item name="colorBackground">@color/blbl_bg_tv_pink</item>
+        <item name="blblContentBackground">?attr/colorSurface</item>
         <item name="colorSurface">@color/blbl_surface_tv_pink</item>
         <item name="colorOnSurface">@color/blbl_text_tv_pink</item>
 

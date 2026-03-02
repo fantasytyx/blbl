@@ -1,10 +1,12 @@
 package blbl.cat3399.core.ui
 
+import android.os.Build
 import android.os.SystemClock
 import android.view.FocusFinder
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -99,6 +101,10 @@ internal class DpadGridController(
     private var lastKnownFocusedAdapterPos: Int = RecyclerView.NO_POSITION
     private var lastKnownFocusedSpanIndex: Int? = null
     private var detachFocusRestoreToken: Int = 0
+    private var originalOverScrollMode: Int? = null
+    private var originalDefaultFocusHighlightEnabled: Boolean? = null
+    private var didSuppressDefaultFocusHighlight: Boolean = false
+    private var focusHighlightListener: ViewTreeObserver.OnGlobalFocusChangeListener? = null
 
     /**
      * RecyclerView-level fallback for the brief moments when:
@@ -206,6 +212,11 @@ internal class DpadGridController(
     fun install() {
         if (installed) return
         installed = true
+        if (originalOverScrollMode == null) {
+            originalOverScrollMode = recyclerView.overScrollMode
+        }
+        recyclerView.overScrollMode = View.OVER_SCROLL_NEVER
+        ensureDefaultFocusHighlightSuppressionHook()
         recyclerView.setOnKeyListener(recyclerKeyListener)
         recyclerView.addOnChildAttachStateChangeListener(childListener)
         // Ensure already-attached children are covered (listener only fires for future attaches).
@@ -218,6 +229,22 @@ internal class DpadGridController(
         if (!installed) return
         installed = false
         unparkFocusInRecyclerViewIfNeeded()
+        removeDefaultFocusHighlightSuppressionHook()
+        originalOverScrollMode?.let { mode ->
+            if (recyclerView.overScrollMode == View.OVER_SCROLL_NEVER) {
+                recyclerView.overScrollMode = mode
+            }
+        }
+        originalOverScrollMode = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            originalDefaultFocusHighlightEnabled?.let { enabled ->
+                if (didSuppressDefaultFocusHighlight && !recyclerView.defaultFocusHighlightEnabled) {
+                    recyclerView.defaultFocusHighlightEnabled = enabled
+                }
+            }
+        }
+        originalDefaultFocusHighlightEnabled = null
+        didSuppressDefaultFocusHighlight = false
         detachFocusRestoreToken++
         clearPendingFocusAfterLoadMore()
         recyclerView.removeOnChildAttachStateChangeListener(childListener)
@@ -669,6 +696,8 @@ internal class DpadGridController(
             return
         }
 
+        suppressRecyclerDefaultFocusHighlight()
+
         if (focusParkedDescendantFocusability == null) {
             // Temporarily prefer focusing the RecyclerView itself over its descendants, so
             // requestFocus() doesn't immediately land back on a child that might be recycled.
@@ -689,6 +718,18 @@ internal class DpadGridController(
         recyclerView.postIfAlive(
             isAlive = { installed && recyclerView.isAttachedToWindow && config.isEnabled() },
         ) {
+            // Don't steal focus back if the user already navigated elsewhere.
+            val currentFocused = recyclerView.rootView?.findFocus()
+            if (
+                currentFocused != null &&
+                currentFocused !== recyclerView &&
+                !FocusTreeUtils.isDescendantOf(currentFocused, recyclerView)
+            ) {
+                restoreRecyclerDefaultFocusHighlightIfSuppressed()
+                return@postIfAlive
+            }
+
+            suppressRecyclerDefaultFocusHighlight()
             if (!recyclerView.isFocused) {
                 recyclerView.requestFocus()
             }
@@ -702,6 +743,66 @@ internal class DpadGridController(
         val original = focusParkedDescendantFocusability ?: return
         focusParkedDescendantFocusability = null
         recyclerView.descendantFocusability = original
+    }
+
+    private fun suppressRecyclerDefaultFocusHighlight() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        if (originalDefaultFocusHighlightEnabled == null) {
+            originalDefaultFocusHighlightEnabled = recyclerView.defaultFocusHighlightEnabled
+        }
+
+        if (recyclerView.defaultFocusHighlightEnabled) {
+            recyclerView.defaultFocusHighlightEnabled = false
+            didSuppressDefaultFocusHighlight = true
+        }
+    }
+
+    private fun restoreRecyclerDefaultFocusHighlightIfSuppressed() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (!didSuppressDefaultFocusHighlight) return
+
+        val original = originalDefaultFocusHighlightEnabled ?: return
+        if (!recyclerView.defaultFocusHighlightEnabled) {
+            recyclerView.defaultFocusHighlightEnabled = original
+        }
+        didSuppressDefaultFocusHighlight = false
+    }
+
+    private fun ensureDefaultFocusHighlightSuppressionHook() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        if (focusHighlightListener != null) return
+
+        if (originalDefaultFocusHighlightEnabled == null) {
+            originalDefaultFocusHighlightEnabled = recyclerView.defaultFocusHighlightEnabled
+        }
+
+        val listener =
+            ViewTreeObserver.OnGlobalFocusChangeListener { oldFocus, newFocus ->
+                if (!installed) return@OnGlobalFocusChangeListener
+                if (newFocus === recyclerView) {
+                    suppressRecyclerDefaultFocusHighlight()
+                } else if (oldFocus === recyclerView) {
+                    restoreRecyclerDefaultFocusHighlightIfSuppressed()
+                }
+            }
+        focusHighlightListener = listener
+        runCatching { recyclerView.viewTreeObserver.addOnGlobalFocusChangeListener(listener) }
+
+        // If focus is already parked on RecyclerView when installing (edge case), suppress right away.
+        if (recyclerView.isFocused) {
+            suppressRecyclerDefaultFocusHighlight()
+        }
+    }
+
+    private fun removeDefaultFocusHighlightSuppressionHook() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+        val listener = focusHighlightListener
+        focusHighlightListener = null
+        if (listener != null) {
+            runCatching { recyclerView.viewTreeObserver.removeOnGlobalFocusChangeListener(listener) }
+        }
     }
 
     private fun tryFocusNextDownFromCurrent(): Boolean {
