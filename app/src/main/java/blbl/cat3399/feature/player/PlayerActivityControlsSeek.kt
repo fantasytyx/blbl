@@ -379,8 +379,14 @@ internal fun PlayerActivity.startHoldSeek(direction: Int, showControls: Boolean)
     holdPrevSpeed = engine.playbackSpeed
     holdPrevPlayWhenReady = engine.playWhenReady
     holdScrubPreviewPosMs = null
-    if (holdMode == AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB) {
-        startHoldScrubSeek(engine = engine, direction = direction, speed = holdSpeed)
+    if (holdMode == AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB || holdMode == AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME) {
+        val fixedStepMs =
+            if (holdMode == AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME) {
+                PlayerActivity.HOLD_SCRUB_FIXED_TIME_STEP_MS
+            } else {
+                null
+            }
+        startHoldScrubSeek(engine = engine, direction = direction, speed = holdSpeed, fixedStepMs = fixedStepMs)
         return
     }
     showSeekHoldHint(direction, holdSpeed)
@@ -400,13 +406,20 @@ internal fun PlayerActivity.startHoldScrub(direction: Int, showControls: Boolean
     }
 
     val holdSpeed = holdSeekSpeed()
+    val holdMode = BiliClient.prefs.playerHoldSeekMode
     holdPrevSpeed = engine.playbackSpeed
     holdPrevPlayWhenReady = engine.playWhenReady
     holdScrubPreviewPosMs = null
-    startHoldScrubSeek(engine = engine, direction = direction, speed = holdSpeed)
+    val fixedStepMs =
+        if (holdMode == AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME) {
+            PlayerActivity.HOLD_SCRUB_FIXED_TIME_STEP_MS
+        } else {
+            null
+        }
+    startHoldScrubSeek(engine = engine, direction = direction, speed = holdSpeed, fixedStepMs = fixedStepMs)
 }
 
-internal fun PlayerActivity.startHoldScrubSeek(engine: BlblPlayerEngine, direction: Int, speed: Float) {
+internal fun PlayerActivity.startHoldScrubSeek(engine: BlblPlayerEngine, direction: Int, speed: Float, fixedStepMs: Long?) {
     val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
     if (duration <= 0L) {
         // Unknown duration: cannot show an actual progress bar scrub; fall back to speed-hold.
@@ -429,9 +442,9 @@ internal fun PlayerActivity.startHoldScrubSeek(engine: BlblPlayerEngine, directi
     showSeekOsd(posMs = initial, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
 
     val tickMs = PlayerActivity.HOLD_SCRUB_TICK_MS
-    // Always use the "scrub progress bar" algorithm for preview scrubbing
-    // (both LEFT and RIGHT directions), independent of the hold-seek mode setting.
-    val stepMs = holdScrubStepMs(durationMs = duration, tickMs = tickMs).coerceAtLeast(1L)
+    val stepMs =
+        fixedStepMs?.coerceAtLeast(1L)
+            ?: holdScrubStepMs(durationMs = duration, tickMs = tickMs).coerceAtLeast(1L)
     val deltaMs = stepMs * direction.toLong()
     holdSeekJob =
         lifecycleScope.launch {

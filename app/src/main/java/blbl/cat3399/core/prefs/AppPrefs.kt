@@ -277,6 +277,7 @@ class AppPrefs(context: Context) {
             return when (v) {
                 PLAYER_HOLD_SEEK_MODE_SPEED,
                 PLAYER_HOLD_SEEK_MODE_SCRUB,
+                PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME,
                 -> v
 
                 else -> PLAYER_HOLD_SEEK_MODE_SPEED
@@ -287,6 +288,7 @@ class AppPrefs(context: Context) {
                 when (value) {
                     PLAYER_HOLD_SEEK_MODE_SPEED,
                     PLAYER_HOLD_SEEK_MODE_SCRUB,
+                    PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME,
                     -> value
 
                     else -> PLAYER_HOLD_SEEK_MODE_SPEED
@@ -709,6 +711,7 @@ class AppPrefs(context: Context) {
 
         const val PLAYER_HOLD_SEEK_MODE_SPEED = "speed"
         const val PLAYER_HOLD_SEEK_MODE_SCRUB = "scrub"
+        const val PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME = "scrub_fixed_time"
         const val PLAYER_HOLD_SEEK_SPEED_DEFAULT = 3.0f
 
         const val PLAYER_OSD_BTN_PREV = "prev"

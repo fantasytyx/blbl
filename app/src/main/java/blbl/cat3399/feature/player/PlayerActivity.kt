@@ -3095,6 +3095,7 @@ class PlayerActivity : BaseActivity() {
         private const val TAP_SEEK_ACTIVE_MS = 1_200L
         internal const val SMART_SEEK_WINDOW_MS = 900L
         internal const val HOLD_SCRUB_TICK_MS = 120L
+        internal const val HOLD_SCRUB_FIXED_TIME_STEP_MS = 10_000L
         internal const val HOLD_SCRUB_TRAVERSE_MS = 10_000L
         internal const val HOLD_SCRUB_SHORT_VIDEO_THRESHOLD_MS = 40_000L
         internal const val HOLD_SCRUB_SHORT_SPEED_MS_PER_S = 4_000L

@@ -86,6 +86,7 @@ object SettingsText {
 
     fun holdSeekModeText(code: String): String =
         when (code) {
+            blbl.cat3399.core.prefs.AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME -> "固定时间拖动进度条"
             blbl.cat3399.core.prefs.AppPrefs.PLAYER_HOLD_SEEK_MODE_SCRUB -> "拖动进度条"
             else -> "倍率加速"
         }
