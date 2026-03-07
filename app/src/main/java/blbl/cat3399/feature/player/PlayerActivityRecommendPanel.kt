@@ -226,6 +226,12 @@ internal fun PlayerActivity.hideBottomCardPanel(restoreFocus: Boolean) {
     }
 }
 
+internal fun PlayerActivity.notifyPartsListPanelChanged() {
+    if (!isBottomCardPanelVisible()) return
+    if (bottomCardPanelKind != PlayerVideoListKind.PARTS) return
+    refreshBottomCardPanelContent(requestFocus = false)
+}
+
 private fun PlayerActivity.refreshBottomCardPanelContent(requestFocus: Boolean) {
     if (!isBottomCardPanelVisible()) return
     val kind = bottomCardPanelKind
@@ -242,7 +248,12 @@ private fun PlayerActivity.refreshBottomCardPanelContent(requestFocus: Boolean) 
         binding.tvListPanelEmpty.text =
             when (kind) {
                 PlayerVideoListKind.PAGE -> "暂无视频列表"
-                PlayerVideoListKind.PARTS -> "暂无合集/分P"
+                PlayerVideoListKind.PARTS ->
+                    if (partsListFetchJob?.isActive == true) {
+                        "加载中…"
+                    } else {
+                        "暂无合集/分P"
+                    }
                 PlayerVideoListKind.RECOMMEND ->
                     if (relatedVideosFetchJob?.isActive == true) {
                         "加载中…"

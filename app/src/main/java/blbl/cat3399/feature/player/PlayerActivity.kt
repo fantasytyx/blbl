@@ -219,6 +219,8 @@ class PlayerActivity : BaseActivity() {
     internal var partsListItems: List<PlayerPlaylistItem> = emptyList()
     internal var partsListUiCards: List<VideoCard> = emptyList()
     internal var partsListIndex: Int = -1
+    internal var partsListFetchJob: kotlinx.coroutines.Job? = null
+    internal var partsListFetchToken: Int = 0
     internal lateinit var session: PlayerSessionSettings
     internal var bottomCardPanelKind: PlayerVideoListKind = PlayerVideoListKind.PAGE
     internal var bottomCardPanelRestoreFocus: WeakReference<View>? = null

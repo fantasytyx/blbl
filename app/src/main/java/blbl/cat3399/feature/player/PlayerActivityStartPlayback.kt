@@ -7,8 +7,12 @@ import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.model.BangumiEpisode
+import blbl.cat3399.core.model.BangumiSeasonDetail
+import blbl.cat3399.core.model.VideoCard
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.util.parseBangumiRedirectUrl
+import blbl.cat3399.core.util.pgcAccessBadgeTextOf
 import blbl.cat3399.feature.my.BangumiDetailActivity
 import blbl.cat3399.feature.player.engine.BlblPlayerEngine
 import blbl.cat3399.feature.player.engine.ExoPlayerEngine
@@ -67,6 +71,9 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(
     updateActionButtonsUi()
 
     if (!preservePartsList) {
+        partsListFetchJob?.cancel()
+        partsListFetchJob = null
+        partsListFetchToken++
         partsListSource = null
         partsListItems = emptyList()
         partsListUiCards = emptyList()
@@ -423,16 +430,49 @@ internal fun PlayerActivity.updatePageListIndexForCurrentMedia(
 }
 
 internal suspend fun PlayerActivity.refreshPartsListFromView(viewData: JSONObject, bvid: String) {
+    val safeBvid = bvid.trim()
+    val aid = currentAid ?: viewData.optLong("aid").takeIf { it > 0 }
+    val cid = currentCid.takeIf { it > 0 }
+
+    if (isPgcLikePlayback()) {
+        val existing = partsListItems
+        if (existing.isNotEmpty()) {
+            val idx = pickPlaylistIndexForCurrentMedia(existing, bvid = safeBvid, aid = aid, cid = cid)
+            if (idx in existing.indices) {
+                partsListIndex = idx
+                return
+            }
+        }
+
+        partsListSource = null
+        partsListItems = emptyList()
+        partsListUiCards = emptyList()
+        partsListIndex = -1
+
+        val reused =
+            tryApplyPgcPartsListFromBangumiPageList(
+                requestBvid = safeBvid,
+                requestAid = aid,
+                requestCid = cid,
+            )
+        if (!reused) {
+            schedulePgcPartsListFetch(
+                requestBvid = safeBvid,
+                requestAid = aid,
+                requestCid = cid,
+                requestEpId = currentEpId?.takeIf { it > 0L },
+                requestSeasonId = currentSeasonId?.takeIf { it > 0L },
+            )
+        }
+        return
+    }
+
     partsListSource = null
     partsListItems = emptyList()
     partsListUiCards = emptyList()
     partsListIndex = -1
 
-    val safeBvid = bvid.trim()
     if (safeBvid.isBlank()) return
-
-    val aid = currentAid ?: viewData.optLong("aid").takeIf { it > 0 }
-    val cid = currentCid.takeIf { it > 0 }
 
     val parsedMulti = parseMultiPagePlaylistFromViewWithUiCards(viewData, bvid = safeBvid, aid = aid)
     if (parsedMulti.items.size > 1) {
@@ -467,6 +507,229 @@ internal suspend fun PlayerActivity.refreshPartsListFromView(viewData: JSONObjec
     if (idxFromApi >= 0) {
         applyPartsList(parsed = parsedFromApi, index = idxFromApi, source = "UgcSeason")
     }
+}
+
+private fun PlayerActivity.tryApplyPgcPartsListFromBangumiPageList(
+    requestBvid: String,
+    requestAid: Long?,
+    requestCid: Long?,
+): Boolean {
+    val src = pageListSource?.trim().orEmpty()
+    if (!src.startsWith("Bangumi:")) return false
+    val items = pageListItems
+    if (items.isEmpty()) return false
+
+    val idxFromCurrent = pickPlaylistIndexForCurrentMedia(items, bvid = requestBvid, aid = requestAid, cid = requestCid)
+    val idx =
+        when {
+            idxFromCurrent in items.indices -> idxFromCurrent
+            pageListIndex in items.indices -> pageListIndex
+            else -> 0
+        }
+    val uiCards =
+        pageListUiCards
+            .takeIf { it.isNotEmpty() && it.size == items.size }
+            ?: emptyList()
+    applyPartsList(parsed = PlaylistParsed(items = items, uiCards = uiCards), index = idx, source = src)
+    return partsListItems.isNotEmpty() && partsListIndex in partsListItems.indices
+}
+
+private data class PgcPartsListResolved(
+    val seasonId: Long,
+    val parsed: PlaylistParsed,
+    val index: Int,
+    val source: String,
+)
+
+private fun PlayerActivity.schedulePgcPartsListFetch(
+    requestBvid: String,
+    requestAid: Long?,
+    requestCid: Long?,
+    requestEpId: Long?,
+    requestSeasonId: Long?,
+) {
+    val safeEpId = requestEpId?.takeIf { it > 0L }
+    val safeSeasonId = requestSeasonId?.takeIf { it > 0L }
+    if (safeEpId == null && safeSeasonId == null) return
+
+    partsListFetchJob?.cancel()
+    val token = ++partsListFetchToken
+    partsListFetchJob =
+        lifecycleScope.launch {
+            try {
+                val detail =
+                    withContext(Dispatchers.IO) {
+                        if (safeSeasonId != null) {
+                            BiliApi.bangumiSeasonDetail(seasonId = safeSeasonId)
+                        } else {
+                            BiliApi.bangumiSeasonDetailByEpId(epId = safeEpId ?: 0L)
+                        }
+                    }
+                if (token != partsListFetchToken) return@launch
+                if (safeEpId != null && currentEpId != safeEpId) return@launch
+
+                val resolved =
+                    resolvePgcPartsListFromSeasonDetail(
+                        detail = detail,
+                        requestEpId = safeEpId,
+                        requestBvid = requestBvid,
+                        requestAid = requestAid,
+                        requestCid = requestCid,
+                    ) ?: return@launch
+
+                if (token != partsListFetchToken) return@launch
+                if (safeEpId != null && currentEpId != safeEpId) return@launch
+
+                if (resolved.seasonId > 0L) {
+                    if (currentSeasonId == null || currentSeasonId == 0L) {
+                        currentSeasonId = resolved.seasonId
+                    }
+                }
+
+                applyPartsList(parsed = resolved.parsed, index = resolved.index, source = resolved.source)
+                updatePlaylistControls()
+                notifyPartsListPanelChanged()
+            } catch (t: Throwable) {
+                if (t is CancellationException) return@launch
+                if (token != partsListFetchToken) return@launch
+                if (safeEpId != null && currentEpId != safeEpId) return@launch
+                AppLog.w("Player", "pgc:partsList:load_failed", t)
+                val e = t as? BiliApiException
+                val msg = e?.apiMessage?.takeIf { it.isNotBlank() } ?: (t.message ?: "加载剧集列表失败")
+                if (isBottomCardPanelVisible() && bottomCardPanelKind == PlayerVideoListKind.PARTS) {
+                    AppToast.show(this@schedulePgcPartsListFetch, msg)
+                }
+            } finally {
+                if (token == partsListFetchToken) partsListFetchJob = null
+                if (token == partsListFetchToken) notifyPartsListPanelChanged()
+            }
+        }
+    notifyPartsListPanelChanged()
+}
+
+private fun PlayerActivity.resolvePgcPartsListFromSeasonDetail(
+    detail: BangumiSeasonDetail,
+    requestEpId: Long?,
+    requestBvid: String,
+    requestAid: Long?,
+    requestCid: Long?,
+): PgcPartsListResolved? {
+    val seasonId = detail.seasonId.takeIf { it > 0L } ?: return null
+
+    val extras =
+        buildList {
+            detail.extraSections.forEach { section -> addAll(section.episodes) }
+        }
+    val inExtras = requestEpId != null && extras.any { it.epId == requestEpId }
+    val useExtras = inExtras && extras.isNotEmpty()
+    val picked = if (useExtras) extras else detail.episodes
+    val listKind = if (useExtras) "extra" else "main"
+    if (picked.isEmpty()) return null
+
+    val items = ArrayList<PlayerPlaylistItem>(picked.size)
+    val cards = ArrayList<VideoCard>(picked.size)
+    for (i in picked.indices) {
+        val ep = picked[i]
+        val cid = ep.cid?.takeIf { it > 0L } ?: continue
+        val bvid = ep.bvid?.trim().orEmpty()
+        val aid = ep.aid?.takeIf { it > 0L }
+        val epId = ep.epId.takeIf { it > 0L }
+        if (bvid.isBlank() && aid == null) continue
+
+        val card =
+            bangumiEpToPartsVideoCard(
+                ep = ep,
+                defaultIndex = i,
+                isExtrasList = useExtras,
+            )
+        items.add(
+            PlayerPlaylistItem(
+                bvid = bvid,
+                cid = cid,
+                epId = epId,
+                aid = aid,
+                title = card.title,
+                seasonId = seasonId,
+            ),
+        )
+        cards.add(card)
+    }
+    if (items.isEmpty()) return null
+
+    val idxFromMedia = pickPlaylistIndexForCurrentMedia(items, bvid = requestBvid, aid = requestAid, cid = requestCid)
+    val idxFromEpId = requestEpId?.let { id -> items.indexOfFirst { it.epId == id } } ?: -1
+    val index =
+        when {
+            idxFromMedia in items.indices -> idxFromMedia
+            idxFromEpId in items.indices -> idxFromEpId
+            else -> 0
+        }
+
+    return PgcPartsListResolved(
+        seasonId = seasonId,
+        parsed = PlaylistParsed(items = items, uiCards = cards),
+        index = index.coerceIn(0, items.lastIndex),
+        source = "Bangumi:$seasonId:$listKind",
+    )
+}
+
+private val PGC_EP_INDEX_ONLY_REGEX = Regex("^\\d+(?:\\.\\d+)?$")
+private val PGC_EP_NUMBER_REGEX = Regex("\\d+(?:\\.\\d+)?")
+
+private fun parsePgcEpisodeNumber(raw: String?): Double? {
+    val s = raw?.trim().orEmpty()
+    if (s.isBlank()) return null
+    s.toDoubleOrNull()?.let { return it }
+    val match = PGC_EP_NUMBER_REGEX.find(s) ?: return null
+    return match.value.toDoubleOrNull()
+}
+
+private fun formatPgcEpisodeNumber(number: Double): String {
+    val asLong = number.toLong()
+    if (number == asLong.toDouble()) return asLong.toString()
+    return number.toString()
+}
+
+private fun bangumiEpToPartsVideoCard(
+    ep: BangumiEpisode,
+    defaultIndex: Int,
+    isExtrasList: Boolean,
+): VideoCard {
+    val rawTitle = ep.title.trim().takeIf { it.isNotBlank() } ?: "-"
+    val episodeNumberText =
+        when {
+            PGC_EP_INDEX_ONLY_REGEX.matches(rawTitle) -> rawTitle
+            else -> parsePgcEpisodeNumber(rawTitle)?.let { formatPgcEpisodeNumber(it) }
+        } ?: parsePgcEpisodeNumber(ep.longTitle)?.let { formatPgcEpisodeNumber(it) }
+            ?: (defaultIndex + 1).toString()
+
+    val longTitle = ep.longTitle.trim().takeIf { it.isNotBlank() }
+    val fallbackTitle =
+        if (PGC_EP_INDEX_ONLY_REGEX.matches(rawTitle)) {
+            "第${rawTitle}话"
+        } else {
+            rawTitle
+        }
+    val title = longTitle ?: fallbackTitle.takeIf { it.isNotBlank() } ?: "第${defaultIndex + 1}集"
+
+    return VideoCard(
+        bvid = ep.bvid.orEmpty(),
+        cid = ep.cid,
+        aid = ep.aid,
+        epId = ep.epId,
+        title = title,
+        coverUrl = ep.coverUrl.orEmpty(),
+        durationSec = 0,
+        ownerName = "",
+        ownerFace = null,
+        ownerMid = null,
+        view = null,
+        danmaku = null,
+        pubDate = null,
+        pubDateText = null,
+        coverLeftBottomText = episodeNumberText.takeIf { !isExtrasList },
+        accessBadgeText = pgcAccessBadgeTextOf(ep.badge),
+    )
 }
 
 private fun PlayerActivity.applyPartsList(parsed: PlaylistParsed, index: Int, source: String) {
