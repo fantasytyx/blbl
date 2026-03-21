@@ -507,6 +507,18 @@
         app:barrierDirection="top"
         app:constraint_referenced_ids="bottom_bar,seek_osd_container" />
 
+    <blbl.cat3399.feature.player.VideoShotPreviewView
+        android:id="@+id/video_shot_preview"
+        android:layout_width="@dimen/player_videoshot_preview_width_medium"
+        android:layout_height="@dimen/player_videoshot_preview_height_medium"
+        android:layout_marginBottom="@dimen/player_videoshot_preview_margin_bottom"
+        android:background="@drawable/bg_rounded_preview"
+        android:clipToOutline="true"
+        android:elevation="@dimen/player_videoshot_preview_elevation"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@id/barrier_player_bottom_overlay_top"
+        app:layout_constraintStart_toStartOf="parent" />
+
     <TextView
         android:id="@+id/tv_debug"
         android:layout_width="0dp"

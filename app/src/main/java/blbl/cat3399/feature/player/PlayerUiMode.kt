@@ -7,6 +7,8 @@ import android.view.ViewGroup.MarginLayoutParams
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.content.ContextCompat
 import blbl.cat3399.R
+import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.ui.BackButtonSizingHelper
 import blbl.cat3399.core.ui.UiScale
 import blbl.cat3399.core.ui.uiScaler
@@ -160,6 +162,37 @@ internal object PlayerUiMode {
 
         applyBottomListPanelSizing(binding = binding, scale = uiScale)
         applySidePanelsSizing(binding = binding, scale = uiScale)
+
+        run {
+            val prefSize = BiliClient.prefs.playerVideoShotPreviewSize
+            val (wId, hId) =
+                when (prefSize) {
+                    AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL ->
+                        R.dimen.player_videoshot_preview_width_small to R.dimen.player_videoshot_preview_height_small
+                    AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE ->
+                        R.dimen.player_videoshot_preview_width_large to R.dimen.player_videoshot_preview_height_large
+                    else ->
+                        R.dimen.player_videoshot_preview_width_medium to R.dimen.player_videoshot_preview_height_medium
+                }
+            setSize(binding.videoShotPreview, widthPx = scaledPx(wId), heightPx = scaledPx(hId))
+
+            val elevationPx = scaledPxF(R.dimen.player_videoshot_preview_elevation)
+            if (binding.videoShotPreview.elevation != elevationPx) {
+                binding.videoShotPreview.elevation = elevationPx
+            }
+
+            (binding.videoShotPreview.layoutParams as? MarginLayoutParams)?.let { lp ->
+                val mb = scaledPx(R.dimen.player_videoshot_preview_margin_bottom)
+                if (lp.bottomMargin != mb) {
+                    lp.bottomMargin = mb
+                    binding.videoShotPreview.layoutParams = lp
+                }
+            }
+
+            if (prefSize == AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF) {
+                binding.videoShotPreview.visibility = View.GONE
+            }
+        }
 
         val topPadH = scaledPx(R.dimen.player_top_bar_padding_h)
         val topPadV = scaledPx(R.dimen.player_top_bar_padding_v)

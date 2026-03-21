@@ -1117,6 +1117,26 @@ class SettingsInteractionHandler(
                 renderer.refreshSection(entry.id)
             }
 
+            SettingId.PlayerVideoShotPreviewSize -> {
+                val options =
+                    listOf(
+                        AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF to "不显示",
+                        AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL to "小",
+                        AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM to "中",
+                        AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE to "大",
+                    )
+                val checked = options.indexOfFirst { it.first == prefs.playerVideoShotPreviewSize }.coerceAtLeast(0)
+                showChoiceDialog(
+                    title = "缩略图显示",
+                    items = options.map { it.second },
+                    checkedIndex = checked,
+                ) { selected ->
+                    val value = options.firstOrNull { it.second == selected }?.first ?: AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM
+                    prefs.playerVideoShotPreviewSize = value
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
             SettingId.ProjectUrl -> showProjectDialog()
 
             SettingId.QqGroup -> {

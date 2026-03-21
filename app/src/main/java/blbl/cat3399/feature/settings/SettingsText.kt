@@ -102,6 +102,14 @@ object SettingsText {
             else -> "倍率加速"
         }
 
+    fun videoShotPreviewSizeText(code: String): String =
+        when (code) {
+            blbl.cat3399.core.prefs.AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF -> "不显示"
+            blbl.cat3399.core.prefs.AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL -> "小"
+            blbl.cat3399.core.prefs.AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE -> "大"
+            else -> "中"
+        }
+
     fun renderViewText(code: String): String =
         when (code) {
             blbl.cat3399.core.prefs.AppPrefs.PLAYER_RENDER_VIEW_TEXTURE_VIEW -> "TextureView"

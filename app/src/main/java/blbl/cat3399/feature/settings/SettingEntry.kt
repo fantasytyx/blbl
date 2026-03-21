@@ -55,6 +55,7 @@ enum class SettingId(
     PlayerDoubleBackToExit("player_double_back_to_exit"),
     PlayerDownKeyOsdFocusTarget("player_down_key_osd_focus_target"),
     PlayerPersistentBottomProgressEnabled("player_persistent_bottom_progress_enabled"),
+    PlayerVideoShotPreviewSize("player_videoshot_preview_size"),
 
     // 弹幕设置
     DanmakuEnabled("danmaku_enabled"),

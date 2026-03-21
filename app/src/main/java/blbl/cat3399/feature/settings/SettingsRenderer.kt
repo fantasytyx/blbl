@@ -258,6 +258,12 @@ class SettingsRenderer(
                         if (prefs.playerPersistentBottomProgressEnabled) "开" else "关",
                         null,
                     ),
+                    SettingEntry(
+                        SettingId.PlayerVideoShotPreviewSize,
+                        "缩略图显示",
+                        SettingsText.videoShotPreviewSizeText(prefs.playerVideoShotPreviewSize),
+                        null,
+                    ),
                 )
 
             "其他设置" ->

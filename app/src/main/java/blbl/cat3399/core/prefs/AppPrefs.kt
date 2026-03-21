@@ -457,6 +457,34 @@ class AppPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS, false)
         set(value) = prefs.edit().putBoolean(KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS, value).apply()
 
+    var playerVideoShotPreviewSize: String
+        get() {
+            val raw = prefs.getString(KEY_PLAYER_VIDEOSHOT_PREVIEW_SIZE, PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM)
+                ?: PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM
+            val v = raw.trim()
+            return when (v) {
+                PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF,
+                PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL,
+                PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM,
+                PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE,
+                -> v
+                else -> PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM
+            }
+        }
+        set(value) {
+            val v = value.trim()
+            val normalized =
+                when (v) {
+                    PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF,
+                    PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL,
+                    PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM,
+                    PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE,
+                    -> v
+                    else -> PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM
+                }
+            prefs.edit().putString(KEY_PLAYER_VIDEOSHOT_PREVIEW_SIZE, normalized).apply()
+        }
+
     var playerAudioBalanceLevel: String
         get() {
             val raw = prefs.getString(KEY_PLAYER_AUDIO_BALANCE_LEVEL, PLAYER_AUDIO_BALANCE_OFF) ?: PLAYER_AUDIO_BALANCE_OFF
@@ -710,6 +738,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_DOUBLE_BACK_TO_EXIT = "player_double_back_on_ended"
         private const val KEY_PLAYER_DOWN_KEY_OSD_FOCUS_TARGET = "player_down_key_osd_focus_target"
         private const val KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS = "player_persistent_bottom_progress"
+        private const val KEY_PLAYER_VIDEOSHOT_PREVIEW_SIZE = "player_videoshot_preview_size"
         private const val KEY_PLAYER_AUDIO_BALANCE_LEVEL = "player_audio_balance_level"
         private const val KEY_PLAYER_PLAYBACK_MODE = "player_playback_mode"
         private const val KEY_PLAYER_OSD_BUTTONS = "player_osd_buttons"
@@ -752,6 +781,11 @@ class AppPrefs(context: Context) {
         const val PLAYER_HOLD_SEEK_MODE_SCRUB = "scrub"
         const val PLAYER_HOLD_SEEK_MODE_SCRUB_FIXED_TIME = "scrub_fixed_time"
         const val PLAYER_HOLD_SEEK_SPEED_DEFAULT = 3.0f
+
+        const val PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF = "off"
+        const val PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL = "small"
+        const val PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM = "medium"
+        const val PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE = "large"
 
         private const val SUBTITLE_BOTTOM_PADDING_FRACTION_DEFAULT = 0.16f
         private const val SUBTITLE_BACKGROUND_OPACITY_DEFAULT = 34f / 255f

@@ -103,6 +103,13 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(
     commentThreadEndReached = false
     commentThreadItems.clear()
 
+    currentVideoShot = null
+    videoShotFetchJob?.cancel()
+    videoShotFetchJob = null
+    videoShotImageCache?.clear()
+    videoShotImageCache = null
+    binding.videoShotPreview.visibility = View.GONE
+
     binding.settingsPanel.visibility = View.GONE
     binding.commentsPanel.visibility = View.GONE
     hideBottomCardPanel(restoreFocus = false)
@@ -312,18 +319,26 @@ internal fun PlayerActivity.startPlayback(
                     }
 
                 val videoShotJob =
-                    async(Dispatchers.IO) {
-                        trace?.log("videoShot:start")
-                        runCatching {
-                            BiliApi.getWebVideoShot(bvid = resolvedBvid, cid = cid)
-                                .let { VideoShot.fromVideoShot(it) }
-                        }.onFailure { t ->
-                            AppLog.w("Player", "load videoShot failed bvid=$resolvedBvid cid=$cid", t)
-                        }.getOrNull().also { result ->
-                            currentVideoShot = result
-                            videoShotImageCache = VideoShotImageCache()
-                            trace?.log("videoShot:done", "ok=${result != null}")
+                    if (BiliClient.prefs.playerVideoShotPreviewSize != AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF) {
+                        async(Dispatchers.IO) {
+                            trace?.log("videoShot:start")
+                            runCatching {
+                                BiliApi.getWebVideoShot(
+                                    bvid = resolvedBvid,
+                                    cid = cid,
+                                    needJsonArrayIndex = true,
+                                ).let { VideoShot.fromVideoShot(it) }
+                            }.onFailure { t ->
+                                AppLog.w("Player", "load videoShot failed bvid=$resolvedBvid cid=$cid", t)
+                            }.getOrNull().also { result ->
+                                currentVideoShot = result
+                                videoShotImageCache = if (result != null) VideoShotImageCache() else null
+                                trace?.log("videoShot:done", "ok=${result != null}")
+                            }
                         }
+                    } else {
+                        trace?.log("videoShot:skip", "reason=pref_off")
+                        null
                     }
 
                 val subtitleSupported = engine.capabilities.subtitlesSupported
@@ -431,7 +446,7 @@ internal fun PlayerActivity.startPlayback(
                 val dmMeta = dmJob.await()
                 trace?.log("danmakuMeta:awaitDone")
                 applyDanmakuMeta(dmMeta)
-                videoShotJob.await()
+                videoShotJob?.await()
                 requestDanmakuSegmentsForPosition(engine.currentPosition.coerceAtLeast(0L), immediate = true)
             } catch (throwable: Throwable) {
                 if (throwable is CancellationException) return@launch

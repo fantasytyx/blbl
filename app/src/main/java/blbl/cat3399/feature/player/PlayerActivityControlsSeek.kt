@@ -101,8 +101,9 @@ internal fun PlayerActivity.showSeekOsd(posMs: Long, durationMs: Long, bufferedP
     val pos = posMs.coerceAtLeast(0L)
     val bufPos = bufferedPosMs.coerceAtLeast(0L)
 
-    // === 新增：判断是否有缩略图数据 ===
-    val hasVideoShot = currentVideoShot != null
+    val hasVideoShot =
+        currentVideoShot != null &&
+            BiliClient.prefs.playerVideoShotPreviewSize != AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF
 
     if (osdMode == PlayerActivity.OsdMode.Full) {
         // Full OSD: update the real SeekBar + time (useful for hold-scrub preview).
@@ -613,14 +614,23 @@ internal fun PlayerActivity.updateVideoShotPreview(
     durationMs: Long,
     trackView: View // 传入当前正在使用的进度条控件
 ) {
-    val previewView = binding.videoShotPreview ?: return
+    if (BiliClient.prefs.playerVideoShotPreviewSize == AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF) {
+        binding.videoShotPreview.visibility = View.GONE
+        videoShotFetchJob?.cancel()
+        return
+    }
+
+    val previewView = binding.videoShotPreview
     val shot = currentVideoShot ?: return
     val cache = videoShotImageCache ?: return
 
     videoShotFetchJob?.cancel()
     videoShotFetchJob = lifecycleScope.launch {
         delay(16) // 16ms 防抖
-        val frame = shot.getSpriteFrame((positionMs / 1000).toInt(), cache)
+        val frame =
+            runCatching { shot.getSpriteFrame((positionMs / 1000).toInt(), cache) }
+                .getOrNull()
+                ?: return@launch
 
         previewView.spriteFrame = frame
 

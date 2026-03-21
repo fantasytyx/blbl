@@ -267,7 +267,7 @@ object BiliApi {
         val imgXSize: Int,
         val imgYSize: Int,
         val image: List<String>,
-        val index: List<UShort>?,
+        val index: List<Int>?,
     )
 
     suspend fun nav(): JSONObject {
@@ -1526,6 +1526,7 @@ object BiliApi {
                 "vmid" to vmid.toString(),
                 "pn" to pn.coerceAtLeast(1).toString(),
                 "ps" to ps.coerceIn(1, 50).toString(),
+                // Add `order_type=attention` to sort by recent visits instead of follow time (default).
             ),
         )
         val json = BiliClient.getJson(
@@ -1911,10 +1912,9 @@ object BiliApi {
         aid: Long? = null,
         bvid: String? = null,
         cid: Long? = null,
-        needJsonArrayIndex: Boolean = false
+        needJsonArrayIndex: Boolean = false,
     ): VideoShotInfo {
-
-        require(aid != null || bvid != null)
+        require(aid != null || bvid != null) { "missing aid/bvid" }
 
         val params = buildMap<String, String> {
             aid?.let { put("aid", it.toString()) }
@@ -1925,7 +1925,7 @@ object BiliApi {
 
         val url = BiliClient.withQuery(
             "https://api.bilibili.com/x/player/videoshot",
-            params
+            params,
         )
 
         val json = BiliClient.getJson(url)
@@ -1933,7 +1933,7 @@ object BiliApi {
         val code = json.optInt("code", 0)
         if (code != 0) {
             val msg = json.optString("message", json.optString("msg", ""))
-            throw BiliApiException(code, msg)
+            throw BiliApiException(apiCode = code, apiMessage = msg)
         }
 
         val data = json.optJSONObject("data") ?: JSONObject()
@@ -1950,7 +1950,7 @@ object BiliApi {
         val indexList = data.optJSONArray("index")?.let { arr ->
             buildList {
                 for (i in 0 until arr.length()) {
-                    add(arr.optInt(i).toUShort())
+                    add(arr.optInt(i))
                 }
             }
         }
@@ -1962,7 +1962,7 @@ object BiliApi {
             imgXSize = data.optInt("img_x_size", 0),
             imgYSize = data.optInt("img_y_size", 0),
             image = images,
-            index = indexList
+            index = indexList,
         )
     }
 }

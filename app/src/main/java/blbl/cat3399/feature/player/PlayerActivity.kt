@@ -299,7 +299,7 @@ class PlayerActivity : BaseActivity() {
     private var playUrlAutoRefreshLastReloadAtElapsedMs: Long = 0L
 
     internal var currentVideoShot: VideoShot? = null
-    internal var videoShotImageCache: VideoShotImageCache? = VideoShotImageCache()
+    internal var videoShotImageCache: VideoShotImageCache? = null
     internal var videoShotFetchJob: Job? = null
 
     private fun isPlayerTeardownInProgress(): Boolean {
@@ -1632,6 +1632,11 @@ class PlayerActivity : BaseActivity() {
         holdSeekJob?.cancel()
         seekHintJob?.cancel()
         keyScrubEndJob?.cancel()
+        videoShotFetchJob?.cancel()
+        videoShotFetchJob = null
+        videoShotImageCache?.clear()
+        videoShotImageCache = null
+        currentVideoShot = null
         relatedVideosFetchJob?.cancel()
         commentsFetchJob?.cancel()
         commentThreadFetchJob?.cancel()
@@ -1861,9 +1866,14 @@ class PlayerActivity : BaseActivity() {
                         val previewPos = (duration * progress) / SEEK_MAX
                         binding.tvTime.text = "${formatHms(previewPos)} / ${formatHms(duration)}"
 
-                        if (currentVideoShot != null) {
+                        val hasVideoShot =
+                            currentVideoShot != null &&
+                                BiliClient.prefs.playerVideoShotPreviewSize != AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF
+                        if (hasVideoShot) {
                             binding.videoShotPreview.visibility = View.VISIBLE
                             updateVideoShotPreview(progress, SEEK_MAX, previewPos, duration, binding.seekProgress)
+                        } else {
+                            binding.videoShotPreview.visibility = View.GONE
                         }
                     }
 
