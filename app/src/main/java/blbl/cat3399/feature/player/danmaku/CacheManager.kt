@@ -23,6 +23,7 @@ import kotlin.math.max
 
 internal data class CacheStyle(
     val textSizePx: Float,
+    val fontWeight: DanmakuFontWeight,
     val strokeWidthPx: Float,
     val outlinePadPx: Float,
     val generation: Int,
@@ -183,6 +184,10 @@ internal class CacheManager(
         val outlinePad = style.outlinePadPx.coerceAtLeast(0f)
         val strokeWidth = style.strokeWidthPx.coerceAtLeast(0f)
 
+        val desiredTypeface = style.fontWeight.typeface
+        if (fill.typeface != desiredTypeface) fill.typeface = desiredTypeface
+        if (stroke.typeface != desiredTypeface) stroke.typeface = desiredTypeface
+
         fill.textSize = style.textSizePx
         stroke.textSize = style.textSizePx
         stroke.strokeWidth = strokeWidth
@@ -215,6 +220,7 @@ internal class CacheManager(
 
         val baseline = outlinePad - fontMetrics.ascent
         val text = danmaku.text
+        val drawStrokeEnabled = strokeWidth > 0.01f
         if (text.isNotBlank()) {
             val segments =
                 item.emoteSegments
@@ -224,7 +230,7 @@ internal class CacheManager(
                         parsed
                     }
             if (segments == null) {
-                canvas.drawText(text, outlinePad, baseline, stroke)
+                if (drawStrokeEnabled) canvas.drawText(text, outlinePad, baseline, stroke)
                 canvas.drawText(text, outlinePad, baseline, fill)
             } else {
                 val emoteSizePx = textHeightPx
@@ -235,7 +241,7 @@ internal class CacheManager(
                     when (seg) {
                         is DanmakuEmoteSegment.Text -> {
                             if (seg.end > seg.start) {
-                                canvas.drawText(text, seg.start, seg.end, cursorX, baseline, stroke)
+                                if (drawStrokeEnabled) canvas.drawText(text, seg.start, seg.end, cursorX, baseline, stroke)
                                 canvas.drawText(text, seg.start, seg.end, cursorX, baseline, fill)
                                 cursorX += fill.measureText(text, seg.start, seg.end)
                             }

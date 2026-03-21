@@ -50,7 +50,21 @@ object SettingsText {
             area >= 0.36f -> "2/5"
             area >= 0.29f -> "1/3"
             area >= 0.22f -> "1/4"
-            else -> "1/5"
+            area >= 0.19f -> "1/5"
+            else -> "1/6"
+        }
+
+    fun danmakuLaneDensityText(prefValue: String): String =
+        when (prefValue.trim()) {
+            blbl.cat3399.core.prefs.AppPrefs.DANMAKU_LANE_DENSITY_SPARSE -> "稀疏"
+            blbl.cat3399.core.prefs.AppPrefs.DANMAKU_LANE_DENSITY_DENSE -> "密集"
+            else -> "标准"
+        }
+
+    fun danmakuFontWeightText(prefValue: String): String =
+        when (prefValue.trim()) {
+            blbl.cat3399.core.prefs.AppPrefs.DANMAKU_FONT_WEIGHT_NORMAL -> "常规"
+            else -> "加粗"
         }
 
     fun aiLevelText(level: Int): String =

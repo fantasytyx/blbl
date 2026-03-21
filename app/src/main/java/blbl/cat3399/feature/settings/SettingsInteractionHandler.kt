@@ -737,9 +737,39 @@ class SettingsInteractionHandler(
                 }
             }
 
+            SettingId.DanmakuFontWeight -> {
+                val options =
+                    listOf(
+                        AppPrefs.DANMAKU_FONT_WEIGHT_NORMAL to "常规",
+                        AppPrefs.DANMAKU_FONT_WEIGHT_BOLD to "加粗",
+                    )
+                showChoiceDialog(
+                    title = "字体粗细",
+                    items = options.map { it.second },
+                    current = SettingsText.danmakuFontWeightText(prefs.danmakuFontWeight),
+                ) { selected ->
+                    val value = options.firstOrNull { it.second == selected }?.first ?: AppPrefs.DANMAKU_FONT_WEIGHT_BOLD
+                    prefs.danmakuFontWeight = value
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
+            SettingId.DanmakuStrokeWidthPx -> {
+                val options = listOf(0, 2, 4, 6)
+                showChoiceDialog(
+                    title = "弹幕文字描边粗细",
+                    items = options.map { it.toString() },
+                    current = prefs.danmakuStrokeWidthPx.toString(),
+                ) { selected ->
+                    prefs.danmakuStrokeWidthPx = selected.toIntOrNull() ?: prefs.danmakuStrokeWidthPx
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
             SettingId.DanmakuArea -> {
                 val options =
                     listOf(
+                        (1f / 6f) to "1/6",
                         (1f / 5f) to "1/5",
                         0.25f to "1/4",
                         (1f / 3f) to "1/3",
@@ -758,6 +788,24 @@ class SettingsInteractionHandler(
                 ) { selected ->
                     val value = options.firstOrNull { it.second == selected }?.first ?: 1.0f
                     prefs.danmakuArea = value
+                    renderer.refreshSection(entry.id)
+                }
+            }
+
+            SettingId.DanmakuLaneDensity -> {
+                val options =
+                    listOf(
+                        AppPrefs.DANMAKU_LANE_DENSITY_SPARSE to "稀疏",
+                        AppPrefs.DANMAKU_LANE_DENSITY_STANDARD to "标准",
+                        AppPrefs.DANMAKU_LANE_DENSITY_DENSE to "密集",
+                    )
+                showChoiceDialog(
+                    title = "轨道密度",
+                    items = options.map { it.second },
+                    current = SettingsText.danmakuLaneDensityText(prefs.danmakuLaneDensity),
+                ) { selected ->
+                    val value = options.firstOrNull { it.second == selected }?.first ?: AppPrefs.DANMAKU_LANE_DENSITY_STANDARD
+                    prefs.danmakuLaneDensity = value
                     renderer.refreshSection(entry.id)
                 }
             }
@@ -1785,7 +1833,7 @@ class SettingsInteractionHandler(
                     }
 
                     PlayerCustomShortcutAction.TYPE_SET_DANMAKU_AREA -> {
-                        val options = listOf(1.0f, 0.8f, 0.75f, 2f / 3f, 0.6f, 0.5f, 0.4f, 1f / 3f, 0.25f, 0.2f)
+                        val options = listOf(1.0f, 0.8f, 0.75f, 2f / 3f, 0.6f, 0.5f, 0.4f, 1f / 3f, 0.25f, 0.2f, 1f / 6f)
                         val items = options.map { SettingsText.areaText(it) }
                         val current = (currentAction as? PlayerCustomShortcutAction.SetDanmakuArea)?.area
                         val checked =

@@ -1,6 +1,8 @@
 package blbl.cat3399.feature.player
 
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import blbl.cat3399.feature.player.danmaku.DanmakuFontWeight
+import blbl.cat3399.feature.player.danmaku.DanmakuLaneDensity
 import blbl.cat3399.feature.player.engine.PlayerEngineKind
 import org.json.JSONObject
 
@@ -156,8 +158,11 @@ internal fun PlayerSessionSettings.toEngineSwitchJsonString(): String {
             put("danmakuEnabled", danmaku.enabled)
             put("danmakuOpacity", danmaku.opacity.toDouble())
             put("danmakuTextSizeSp", danmaku.textSizeSp.toDouble())
+            put("danmakuFontWeight", danmaku.fontWeight.prefValue)
+            put("danmakuStrokeWidthPx", danmaku.strokeWidthPx)
             put("danmakuSpeedLevel", danmaku.speedLevel)
             put("danmakuArea", danmaku.area.toDouble())
+            put("danmakuLaneDensity", danmaku.laneDensity.prefValue)
             put("debugEnabled", debugEnabled)
             put("engineKind", engineKind.prefValue)
         }
@@ -183,6 +188,15 @@ internal fun PlayerSessionSettings.restoreFromEngineSwitchJsonString(raw: String
         return v.takeIf { it.isNotBlank() }
     }
 
+    fun normalizeDanmakuStrokeWidthPx(value: Int): Int {
+        return when {
+            value <= 1 -> 0
+            value <= 3 -> 2
+            value <= 5 -> 4
+            else -> 6
+        }
+    }
+
     val speed = optFloat("playbackSpeed", playbackSpeed).coerceIn(0.25f, 4.0f)
     val codec = obj.optString("preferCodec", preferCodec).trim().ifBlank { preferCodec }
     val preferAudio = optInt("preferAudioId", preferAudioId).takeIf { it > 0 } ?: preferAudioId
@@ -202,8 +216,11 @@ internal fun PlayerSessionSettings.restoreFromEngineSwitchJsonString(raw: String
     val danEnabled = obj.optBoolean("danmakuEnabled", danmaku.enabled)
     val danOpacity = optFloat("danmakuOpacity", danmaku.opacity).coerceIn(0.05f, 1.0f)
     val danText = optFloat("danmakuTextSizeSp", danmaku.textSizeSp).coerceIn(10f, 60f)
+    val danFontWeight = DanmakuFontWeight.fromPrefValue(obj.optString("danmakuFontWeight", danmaku.fontWeight.prefValue))
+    val danStrokeWidthPx = normalizeDanmakuStrokeWidthPx(optInt("danmakuStrokeWidthPx", danmaku.strokeWidthPx))
     val danSpeed = optInt("danmakuSpeedLevel", danmaku.speedLevel).coerceIn(1, 10)
     val danArea = optFloat("danmakuArea", danmaku.area).coerceIn(0.05f, 1.0f)
+    val danLaneDensity = DanmakuLaneDensity.fromPrefValue(obj.optString("danmakuLaneDensity", danmaku.laneDensity.prefValue))
     val dbg = obj.optBoolean("debugEnabled", debugEnabled)
     val restoredEngineKind = PlayerEngineKind.fromPrefValue(obj.optString("engineKind", engineKind.prefValue))
 
@@ -225,8 +242,11 @@ internal fun PlayerSessionSettings.restoreFromEngineSwitchJsonString(raw: String
                 enabled = danEnabled,
                 opacity = danOpacity,
                 textSizeSp = danText,
+                fontWeight = danFontWeight,
+                strokeWidthPx = danStrokeWidthPx,
                 speedLevel = danSpeed,
                 area = danArea,
+                laneDensity = danLaneDensity,
             ),
         debugEnabled = dbg,
         engineKind = restoredEngineKind,

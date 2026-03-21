@@ -105,7 +105,8 @@ internal fun areaText(area: Float): String =
         area >= 0.36f -> "2/5"
         area >= 0.29f -> "1/3"
         area >= 0.22f -> "1/4"
-        else -> "1/5"
+        area >= 0.19f -> "1/5"
+        else -> "1/6"
     }
 
 internal fun normalizeUrl(url: String): String {

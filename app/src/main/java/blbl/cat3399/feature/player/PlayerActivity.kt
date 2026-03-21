@@ -75,6 +75,8 @@ import blbl.cat3399.core.util.Format as BlblFormat
 import blbl.cat3399.feature.following.UpDetailActivity
 import blbl.cat3399.feature.my.BangumiDetailActivity
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import blbl.cat3399.feature.player.danmaku.DanmakuFontWeight
+import blbl.cat3399.feature.player.danmaku.DanmakuLaneDensity
 import blbl.cat3399.feature.player.engine.BlblPlayerEngine
 import blbl.cat3399.feature.player.engine.ExoPlayerEngine
 import blbl.cat3399.feature.player.engine.IjkPlayerEngine
@@ -741,8 +743,11 @@ class PlayerActivity : BaseActivity() {
                 enabled = prefs.danmakuEnabled,
                 opacity = prefs.danmakuOpacity,
                 textSizeSp = prefs.danmakuTextSizeSp,
+                fontWeight = DanmakuFontWeight.fromPrefValue(prefs.danmakuFontWeight),
+                strokeWidthPx = prefs.danmakuStrokeWidthPx,
                 speedLevel = prefs.danmakuSpeed,
                 area = prefs.danmakuArea,
+                laneDensity = DanmakuLaneDensity.fromPrefValue(prefs.danmakuLaneDensity),
             ),
             debugEnabled = prefs.playerDebugEnabled,
             engineKind = PlayerEngineKind.fromPrefValue(prefs.playerEngineKind),

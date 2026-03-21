@@ -430,8 +430,11 @@ class DanmakuView @JvmOverloads constructor(
             enabled = true,
             opacity = 1f,
             textSizeSp = 18f,
+            fontWeight = DanmakuFontWeight.Bold,
+            strokeWidthPx = 4,
             speedLevel = 4,
             area = 1f,
+            laneDensity = DanmakuLaneDensity.Standard,
         )
 
     private class DebugStatsCollector {

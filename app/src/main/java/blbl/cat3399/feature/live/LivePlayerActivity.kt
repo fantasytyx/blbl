@@ -58,6 +58,8 @@ import blbl.cat3399.feature.player.PlayerSettingsAdapter
 import blbl.cat3399.feature.player.PlayerUiMode
 import blbl.cat3399.feature.player.areaText
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
+import blbl.cat3399.feature.player.danmaku.DanmakuFontWeight
+import blbl.cat3399.feature.player.danmaku.DanmakuLaneDensity
 import blbl.cat3399.feature.player.engine.BlblPlayerEngine
 import blbl.cat3399.feature.player.engine.ExoPlayerEngine
 import blbl.cat3399.feature.player.engine.IjkPlayerPlugin
@@ -173,8 +175,11 @@ class LivePlayerActivity : BaseActivity() {
                     enabled = prefs.danmakuEnabled,
                     opacity = prefs.danmakuOpacity,
                     textSizeSp = prefs.danmakuTextSizeSp,
+                    fontWeight = DanmakuFontWeight.fromPrefValue(prefs.danmakuFontWeight),
+                    strokeWidthPx = prefs.danmakuStrokeWidthPx,
                     speedLevel = prefs.danmakuSpeed,
                     area = prefs.danmakuArea,
+                    laneDensity = DanmakuLaneDensity.fromPrefValue(prefs.danmakuLaneDensity),
                 ),
                 debugEnabled = prefs.playerDebugEnabled,
             )
@@ -1771,8 +1776,11 @@ class LivePlayerActivity : BaseActivity() {
             put("danmakuEnabled", danmaku.enabled)
             put("danmakuOpacity", danmaku.opacity.toDouble())
             put("danmakuTextSizeSp", danmaku.textSizeSp.toDouble())
+            put("danmakuFontWeight", danmaku.fontWeight.prefValue)
+            put("danmakuStrokeWidthPx", danmaku.strokeWidthPx)
             put("danmakuSpeedLevel", danmaku.speedLevel)
             put("danmakuArea", danmaku.area.toDouble())
+            put("danmakuLaneDensity", danmaku.laneDensity.prefValue)
             put("debugEnabled", debugEnabled)
         }.toString()
     }
@@ -1790,6 +1798,15 @@ class LivePlayerActivity : BaseActivity() {
             return obj.optInt(key, fallback)
         }
 
+        fun normalizeDanmakuStrokeWidthPx(value: Int): Int {
+            return when {
+                value <= 1 -> 0
+                value <= 3 -> 2
+                value <= 5 -> 4
+                else -> 6
+            }
+        }
+
         val restoredEngineKind = PlayerEngineKind.fromPrefValue(obj.optString("engineKind", engineKind.prefValue))
         val restoredTargetQn = optInt("targetQn", targetQn).takeIf { it > 0 } ?: targetQn
         val restoredLineOrder = optInt("lineOrder", lineOrder).takeIf { it > 0 } ?: lineOrder
@@ -1798,8 +1815,11 @@ class LivePlayerActivity : BaseActivity() {
         val restoredDanmakuEnabled = obj.optBoolean("danmakuEnabled", danmaku.enabled)
         val restoredDanmakuOpacity = optFloat("danmakuOpacity", danmaku.opacity).coerceIn(0.05f, 1.0f)
         val restoredDanmakuTextSizeSp = optFloat("danmakuTextSizeSp", danmaku.textSizeSp).coerceIn(10f, 60f)
+        val restoredDanmakuFontWeight = DanmakuFontWeight.fromPrefValue(obj.optString("danmakuFontWeight", danmaku.fontWeight.prefValue))
+        val restoredDanmakuStrokeWidthPx = normalizeDanmakuStrokeWidthPx(optInt("danmakuStrokeWidthPx", danmaku.strokeWidthPx))
         val restoredDanmakuSpeedLevel = optInt("danmakuSpeedLevel", danmaku.speedLevel).coerceIn(1, 10)
         val restoredDanmakuArea = optFloat("danmakuArea", danmaku.area).coerceIn(0.05f, 1.0f)
+        val restoredDanmakuLaneDensity = DanmakuLaneDensity.fromPrefValue(obj.optString("danmakuLaneDensity", danmaku.laneDensity.prefValue))
         val restoredDebugEnabled = obj.optBoolean("debugEnabled", debugEnabled)
 
         return copy(
@@ -1813,8 +1833,11 @@ class LivePlayerActivity : BaseActivity() {
                     enabled = restoredDanmakuEnabled,
                     opacity = restoredDanmakuOpacity,
                     textSizeSp = restoredDanmakuTextSizeSp,
+                    fontWeight = restoredDanmakuFontWeight,
+                    strokeWidthPx = restoredDanmakuStrokeWidthPx,
                     speedLevel = restoredDanmakuSpeedLevel,
                     area = restoredDanmakuArea,
+                    laneDensity = restoredDanmakuLaneDensity,
                 ),
             debugEnabled = restoredDebugEnabled,
         )
@@ -1831,8 +1854,11 @@ class LivePlayerActivity : BaseActivity() {
                 enabled = BiliClient.prefs.danmakuEnabled,
                 opacity = BiliClient.prefs.danmakuOpacity,
                 textSizeSp = BiliClient.prefs.danmakuTextSizeSp,
+                fontWeight = DanmakuFontWeight.fromPrefValue(BiliClient.prefs.danmakuFontWeight),
+                strokeWidthPx = BiliClient.prefs.danmakuStrokeWidthPx,
                 speedLevel = BiliClient.prefs.danmakuSpeed,
                 area = BiliClient.prefs.danmakuArea,
+                laneDensity = DanmakuLaneDensity.fromPrefValue(BiliClient.prefs.danmakuLaneDensity),
             ),
         val debugEnabled: Boolean = BiliClient.prefs.playerDebugEnabled,
     )

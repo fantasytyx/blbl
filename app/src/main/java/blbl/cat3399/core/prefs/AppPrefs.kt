@@ -162,6 +162,69 @@ class AppPrefs(context: Context) {
         get() = prefs.getFloat(KEY_DANMAKU_TEXT_SIZE_SP, 18f)
         set(value) = prefs.edit().putFloat(KEY_DANMAKU_TEXT_SIZE_SP, value).apply()
 
+    var danmakuLaneDensity: String
+        get() {
+            val raw = prefs.getString(KEY_DANMAKU_LANE_DENSITY, DANMAKU_LANE_DENSITY_STANDARD) ?: DANMAKU_LANE_DENSITY_STANDARD
+            val v = raw.trim()
+            return when (v) {
+                DANMAKU_LANE_DENSITY_SPARSE,
+                DANMAKU_LANE_DENSITY_STANDARD,
+                DANMAKU_LANE_DENSITY_DENSE,
+                -> v
+
+                else -> DANMAKU_LANE_DENSITY_STANDARD
+            }
+        }
+        set(value) {
+            val v = value.trim()
+            val normalized =
+                when (v) {
+                    DANMAKU_LANE_DENSITY_SPARSE -> DANMAKU_LANE_DENSITY_SPARSE
+                    DANMAKU_LANE_DENSITY_DENSE -> DANMAKU_LANE_DENSITY_DENSE
+                    else -> DANMAKU_LANE_DENSITY_STANDARD
+                }
+            prefs.edit().putString(KEY_DANMAKU_LANE_DENSITY, normalized).apply()
+        }
+
+    var danmakuStrokeWidthPx: Int
+        get() {
+            val v = prefs.getInt(KEY_DANMAKU_STROKE_WIDTH_PX, 4)
+            return when (v) {
+                0, 2, 4, 6 -> v
+                else -> 4
+            }
+        }
+        set(value) {
+            val v =
+                when (value) {
+                    0, 2, 4, 6 -> value
+                    else -> 4
+                }
+            prefs.edit().putInt(KEY_DANMAKU_STROKE_WIDTH_PX, v).apply()
+        }
+
+    var danmakuFontWeight: String
+        get() {
+            val raw = prefs.getString(KEY_DANMAKU_FONT_WEIGHT, DANMAKU_FONT_WEIGHT_BOLD) ?: DANMAKU_FONT_WEIGHT_BOLD
+            val v = raw.trim()
+            return when (v) {
+                DANMAKU_FONT_WEIGHT_NORMAL,
+                DANMAKU_FONT_WEIGHT_BOLD,
+                -> v
+
+                else -> DANMAKU_FONT_WEIGHT_BOLD
+            }
+        }
+        set(value) {
+            val v = value.trim()
+            val normalized =
+                when (v) {
+                    DANMAKU_FONT_WEIGHT_NORMAL -> DANMAKU_FONT_WEIGHT_NORMAL
+                    else -> DANMAKU_FONT_WEIGHT_BOLD
+                }
+            prefs.edit().putString(KEY_DANMAKU_FONT_WEIGHT, normalized).apply()
+        }
+
     var danmakuSpeed: Int
         get() = prefs.getInt(KEY_DANMAKU_SPEED, 4)
         set(value) = prefs.edit().putInt(KEY_DANMAKU_SPEED, value).apply()
@@ -710,6 +773,9 @@ class AppPrefs(context: Context) {
         private const val KEY_DANMAKU_FOLLOW_BILI_SHIELD = "danmaku_follow_bili_shield"
         private const val KEY_DANMAKU_OPACITY = "danmaku_opacity"
         private const val KEY_DANMAKU_TEXT_SIZE_SP = "danmaku_text_size_sp"
+        private const val KEY_DANMAKU_LANE_DENSITY = "danmaku_lane_density"
+        private const val KEY_DANMAKU_STROKE_WIDTH_PX = "danmaku_stroke_width_px"
+        private const val KEY_DANMAKU_FONT_WEIGHT = "danmaku_font_weight"
         private const val KEY_DANMAKU_SPEED = "danmaku_speed"
         private const val KEY_DANMAKU_AREA = "danmaku_area"
         private const val KEY_PLAYER_PREFERRED_QN = "player_preferred_qn"
@@ -758,6 +824,13 @@ class AppPrefs(context: Context) {
 
         const val PLAYER_CDN_BILIVIDEO = "bilivideo"
         const val PLAYER_CDN_MCDN = "mcdn"
+
+        const val DANMAKU_LANE_DENSITY_SPARSE = "sparse"
+        const val DANMAKU_LANE_DENSITY_STANDARD = "standard"
+        const val DANMAKU_LANE_DENSITY_DENSE = "dense"
+
+        const val DANMAKU_FONT_WEIGHT_NORMAL = "normal"
+        const val DANMAKU_FONT_WEIGHT_BOLD = "bold"
 
         const val PLAYER_RENDER_VIEW_SURFACE_VIEW = "surface_view"
         const val PLAYER_RENDER_VIEW_TEXTURE_VIEW = "texture_view"

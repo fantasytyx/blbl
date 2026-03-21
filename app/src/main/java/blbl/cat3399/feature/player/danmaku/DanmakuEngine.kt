@@ -92,7 +92,18 @@ internal class DanmakuEngine(
     @Volatile private var viewportTopInsetPx: Int = 0
     @Volatile private var viewportBottomInsetPx: Int = 0
 
-    @Volatile private var config: DanmakuConfig = DanmakuConfig(enabled = true, opacity = 1f, textSizeSp = 18f, speedLevel = 4, area = 1f)
+    @Volatile
+    private var config: DanmakuConfig =
+        DanmakuConfig(
+            enabled = true,
+            opacity = 1f,
+            textSizeSp = 18f,
+            fontWeight = DanmakuFontWeight.Bold,
+            strokeWidthPx = 4,
+            speedLevel = 4,
+            area = 1f,
+            laneDensity = DanmakuLaneDensity.Standard,
+        )
 
     @Volatile private var textSizePx: Float = sp(18f)
     @Volatile private var strokeWidthPx: Float = 4f
@@ -158,15 +169,24 @@ internal class DanmakuEngine(
         synchronized(actionStateLock) {
             config = newConfig
             val tsPx = sp(newConfig.textSizeSp).coerceAtLeast(1f)
-            val oldTs = textSizePx
-            textSizePx = tsPx
-            strokeWidthPx = 4f
-            outlinePadPx = max(1f, strokeWidthPx / 2f)
-            actionPaint.textSize = tsPx
+            val newStrokeWidthPx = newConfig.strokeWidthPx.coerceAtLeast(0).toFloat()
+            val newTypeface = newConfig.fontWeight.typeface
 
-            if (oldTs != tsPx) {
+            val oldTs = textSizePx
+            val oldStrokeWidthPx = strokeWidthPx
+            val oldTypeface = actionPaint.typeface
+
+            textSizePx = tsPx
+            strokeWidthPx = newStrokeWidthPx
+            outlinePadPx = max(1f, newStrokeWidthPx / 2f)
+
+            actionPaint.textSize = tsPx
+            if (actionPaint.typeface != newTypeface) actionPaint.typeface = newTypeface
+
+            val styleChanged = oldTs != tsPx || oldStrokeWidthPx != newStrokeWidthPx || oldTypeface != newTypeface
+            if (styleChanged) {
                 cacheStyleGeneration++
-                // Invalidate current caches to avoid mixing sizes.
+                // Invalidate current caches to avoid mixing styles.
                 val releaseAt = currentUiFrameId + 1
                 val size = active.size
                 for (i in 0 until size) {
@@ -230,7 +250,8 @@ internal class DanmakuEngine(
         actionPaint.textSize = textSizePx
         actionPaint.getFontMetrics(actionFontMetrics)
         val textBoxHeight = (actionFontMetrics.descent - actionFontMetrics.ascent) + outlinePad * 2f
-        val laneHeight = max(18f, textBoxHeight * 1.15f)
+        val baseLaneHeight = max(18f, textBoxHeight * 1.15f)
+        val laneHeight = max(textBoxHeight, baseLaneHeight * cfg.laneDensity.laneHeightFactor)
         val usableHeight = (availableHeight * cfg.area.coerceIn(0f, 1f)).toInt().coerceAtLeast(0)
         val laneCount = max(1, (usableHeight / laneHeight).toInt())
 
@@ -403,6 +424,7 @@ internal class DanmakuEngine(
         val style =
             CacheStyle(
                 textSizePx = textSizePx,
+                fontWeight = cfg.fontWeight,
                 strokeWidthPx = strokeWidthPx,
                 outlinePadPx = outlinePad,
                 generation = cacheStyleGeneration,
@@ -473,6 +495,11 @@ internal class DanmakuEngine(
         if (drawFill.textSize != ts) {
             drawFill.textSize = ts
             drawStroke.textSize = ts
+        }
+        val desiredTypeface = cfg.fontWeight.typeface
+        if (drawFill.typeface != desiredTypeface) {
+            drawFill.typeface = desiredTypeface
+            drawStroke.typeface = desiredTypeface
         }
         if (drawStroke.strokeWidth != strokeWidthPx) {
             drawStroke.strokeWidth = strokeWidthPx
@@ -875,9 +902,12 @@ internal class DanmakuEngine(
         val text = item.data.text
         if (text.isBlank()) return
 
+        val drawStrokeEnabled = strokeWidthPx > 0.01f
         val rgb = item.data.color and 0xFFFFFF
-        val strokeAlpha = ((opacityAlpha * 0xCC) / 255).coerceIn(0, 255)
-        drawStroke.color = (strokeAlpha shl 24) or 0x000000
+        if (drawStrokeEnabled) {
+            val strokeAlpha = ((opacityAlpha * 0xCC) / 255).coerceIn(0, 255)
+            drawStroke.color = (strokeAlpha shl 24) or 0x000000
+        }
         drawFill.color = (opacityAlpha shl 24) or rgb
 
         val textX = x + outlinePad
@@ -889,9 +919,9 @@ internal class DanmakuEngine(
                     val parsed = if (text.contains('[')) parseEmoteSegments(text) else null
                     if (parsed != null) item.emoteSegments = parsed
                     parsed
-                }
+        }
         if (segments == null) {
-            canvas.drawText(text, textX, baseline, drawStroke)
+            if (drawStrokeEnabled) canvas.drawText(text, textX, baseline, drawStroke)
             canvas.drawText(text, textX, baseline, drawFill)
             return
         }
@@ -903,7 +933,7 @@ internal class DanmakuEngine(
             when (seg) {
                 is DanmakuEmoteSegment.Text -> {
                     if (seg.end > seg.start) {
-                        canvas.drawText(text, seg.start, seg.end, cursorX, baseline, drawStroke)
+                        if (drawStrokeEnabled) canvas.drawText(text, seg.start, seg.end, cursorX, baseline, drawStroke)
                         canvas.drawText(text, seg.start, seg.end, cursorX, baseline, drawFill)
                         cursorX += drawFill.measureText(text, seg.start, seg.end)
                     }

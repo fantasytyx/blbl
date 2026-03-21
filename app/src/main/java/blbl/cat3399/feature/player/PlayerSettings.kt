@@ -826,6 +826,7 @@ internal fun PlayerActivity.showDanmakuSpeedDialog() {
 
 internal fun PlayerActivity.showDanmakuAreaDialog() {
     val options = listOf(
+        (1f / 6f) to "1/6",
         (1f / 5f) to "1/5",
         0.25f to "1/4",
         (1f / 3f) to "1/3",
