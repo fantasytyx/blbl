@@ -124,7 +124,7 @@ internal fun PlayerActivity.showSeekOsd(posMs: Long, durationMs: Long, bufferedP
             // === 新增：在 Full 模式下更新并显示缩略图，跟随主进度条 ===
             if (hasVideoShot) {
                 binding.videoShotPreview.visibility = View.VISIBLE
-                updateVideoShotPreview(pNow, PlayerActivity.SEEK_MAX, pos, duration, binding.seekProgress)
+                updateVideoShotPreview(pNow, PlayerActivity.SEEK_MAX, pos, binding.seekProgress)
             }
         }
         noteUserInteraction()
@@ -147,7 +147,7 @@ internal fun PlayerActivity.showSeekOsd(posMs: Long, durationMs: Long, bufferedP
         // === 新增：在瞬时 OSD 模式下更新并显示缩略图，跟随瞬时进度条 ===
         if (hasVideoShot) {
             binding.videoShotPreview.visibility = View.VISIBLE
-            updateVideoShotPreview(pNow, PlayerActivity.SEEK_MAX, pos, duration, binding.progressSeekOsd)
+            updateVideoShotPreview(pNow, PlayerActivity.SEEK_MAX, pos, binding.progressSeekOsd)
         }
     } else {
         binding.progressSeekOsd.secondaryProgress = 0
@@ -605,7 +605,6 @@ internal fun PlayerActivity.updateVideoShotPreview(
     progress: Int,
     max: Int,
     positionMs: Long,
-    durationMs: Long,
     trackView: View // 传入当前正在使用的进度条控件
 ) {
     if (BiliClient.prefs.playerVideoShotPreviewSize == AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF) {
@@ -617,6 +616,10 @@ internal fun PlayerActivity.updateVideoShotPreview(
     val previewView = binding.videoShotPreview
     val shot = currentVideoShot ?: return
     val cache = videoShotImageCache ?: return
+    previewView.setContentAspectRatio(
+        width = currentVideoContentWidth ?: shot.fallbackAspectWidth,
+        height = currentVideoContentHeight ?: shot.fallbackAspectHeight,
+    )
 
     videoShotFetchJob?.cancel()
     videoShotFetchJob = lifecycleScope.launch {
@@ -627,26 +630,32 @@ internal fun PlayerActivity.updateVideoShotPreview(
                 ?: return@launch
 
         previewView.spriteFrame = frame
-
-        // === 处理 X 轴随 trackView 平移 ===
-        val containerWidth = trackView.width
-        val imageWidth = previewView.width
-
-        if (containerWidth > 0 && imageWidth > 0 && durationMs > 0) {
-            val progressRatio = progress.toDouble() / max.toDouble()
-
-            // 基于指定的 trackView 的内部宽度计算相对坐标
-            var rawOffset = (containerWidth * progressRatio) - (imageWidth / 2.0)
-
-            // 如果 trackView（如 progressSeekOsd）有 marginStart，补偿它的 left 坐标差异
-            rawOffset += trackView.left
-
-            // 限制边界：不能超出屏幕左边，也不能超出屏幕右边
-            val minOffset = 0.0
-            val parentWidth = (previewView.parent as? View)?.width ?: containerWidth
-            val maxOffset = (parentWidth - imageWidth).toDouble()
-
-            previewView.translationX = rawOffset.coerceIn(minOffset, maxOffset).toFloat()
+        positionVideoShotPreviewX(previewView, trackView, progress, max)
+        previewView.post {
+            if (previewView.spriteFrame === frame) {
+                positionVideoShotPreviewX(previewView, trackView, progress, max)
+            }
         }
     }
+}
+
+private fun positionVideoShotPreviewX(
+    previewView: View,
+    trackView: View,
+    progress: Int,
+    max: Int,
+) {
+    val containerWidth = trackView.width
+    val previewWidth = previewView.width
+    if (containerWidth <= 0 || previewWidth <= 0 || max <= 0) return
+
+    val progressRatio = progress.toDouble() / max.toDouble()
+    var rawOffset = (containerWidth * progressRatio) - (previewWidth / 2.0)
+    rawOffset += trackView.left
+
+    val minOffset = 0.0
+    val parentWidth = (previewView.parent as? View)?.width ?: containerWidth
+    val maxOffset = (parentWidth - previewWidth).toDouble()
+
+    previewView.translationX = rawOffset.coerceIn(minOffset, maxOffset).toFloat()
 }

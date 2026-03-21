@@ -112,6 +112,10 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(
     videoShotFetchJob = null
     videoShotImageCache?.clear()
     videoShotImageCache = null
+    currentVideoContentWidth = null
+    currentVideoContentHeight = null
+    binding.videoShotPreview.spriteFrame = null
+    binding.videoShotPreview.resetContentAspectRatio()
     binding.videoShotPreview.visibility = View.GONE
 
     binding.settingsPanel.visibility = View.GONE

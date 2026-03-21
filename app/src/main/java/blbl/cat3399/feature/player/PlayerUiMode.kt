@@ -165,16 +165,16 @@ internal object PlayerUiMode {
 
         run {
             val prefSize = BiliClient.prefs.playerVideoShotPreviewSize
-            val (wId, hId) =
+            val shortEdgeId =
                 when (prefSize) {
                     AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_SMALL ->
-                        R.dimen.player_videoshot_preview_width_small to R.dimen.player_videoshot_preview_height_small
+                        R.dimen.player_videoshot_preview_short_edge_small
                     AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_LARGE ->
-                        R.dimen.player_videoshot_preview_width_large to R.dimen.player_videoshot_preview_height_large
+                        R.dimen.player_videoshot_preview_short_edge_large
                     else ->
-                        R.dimen.player_videoshot_preview_width_medium to R.dimen.player_videoshot_preview_height_medium
+                        R.dimen.player_videoshot_preview_short_edge_medium
                 }
-            setSize(binding.videoShotPreview, widthPx = scaledPx(wId), heightPx = scaledPx(hId))
+            binding.videoShotPreview.setShortEdge(scaledPx(shortEdgeId))
 
             val elevationPx = scaledPxF(R.dimen.player_videoshot_preview_elevation)
             if (binding.videoShotPreview.elevation != elevationPx) {

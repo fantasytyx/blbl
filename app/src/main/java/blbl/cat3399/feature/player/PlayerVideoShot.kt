@@ -22,8 +22,8 @@ internal data class VideoShot(
     val images: List<ByteArray>,
     val imageCountX: Int,
     val imageCountY: Int,
-    val imageWidth: Int,
-    val imageHeight: Int,
+    val fallbackAspectWidth: Int,
+    val fallbackAspectHeight: Int,
 ) {
     companion object {
         private const val TAG = "VideoShot"
@@ -118,16 +118,15 @@ internal data class VideoShot(
 
                 val x = videoShot.imgXLen.takeIf { it > 0 } ?: 10
                 val y = videoShot.imgYLen.takeIf { it > 0 } ?: 10
-                val w = videoShot.imgXSize.takeIf { it > 0 } ?: 160
-                val h = videoShot.imgYSize.takeIf { it > 0 } ?: 90
-
+                val fallbackAspectWidth = videoShot.imgXSize.takeIf { it > 0 } ?: 160
+                val fallbackAspectHeight = videoShot.imgYSize.takeIf { it > 0 } ?: 90
                 return@coroutineScope VideoShot(
                     times = times,
                     images = images.filterNotNull(),
                     imageCountX = x,
                     imageCountY = y,
-                    imageWidth = w,
-                    imageHeight = h,
+                    fallbackAspectWidth = fallbackAspectWidth,
+                    fallbackAspectHeight = fallbackAspectHeight,
                 )
             }
     }
@@ -143,14 +142,14 @@ internal data class VideoShot(
         val imagesIndex = (index / singleImgCount).coerceIn(0, images.lastIndex)
         val imageIndex = (index % singleImgCount).coerceIn(0, singleImgCount - 1)
 
-        val spriteSheet = cache.getOrDecodeImage(
-            imagesIndex,
-            images[imagesIndex],
-        )
+        val spriteSheet =
+            cache.getOrDecodeImage(
+                imagesIndex,
+                images[imagesIndex],
+            )
 
         val cellWidth = spriteSheet.width / imageCountX
         val cellHeight = spriteSheet.height / imageCountY
-
         val left = (imageIndex % imageCountX) * cellWidth
         val top = (imageIndex / imageCountX) * cellHeight
 
@@ -183,10 +182,11 @@ internal class VideoShotImageCache {
 
     companion object {
         private const val TAG = "VideoShotCache"
-        private val bitmapOptions = BitmapFactory.Options().apply {
-            inPreferredConfig = Bitmap.Config.RGB_565
-            inScaled = false
-        }
+        private val bitmapOptions =
+            BitmapFactory.Options().apply {
+                inPreferredConfig = Bitmap.Config.RGB_565
+                inScaled = false
+            }
 
         private val placeholderBitmap: Bitmap by lazy {
             Bitmap.createBitmap(1, 1, Bitmap.Config.RGB_565).apply {
@@ -195,33 +195,35 @@ internal class VideoShotImageCache {
         }
     }
 
-    suspend fun getOrDecodeImage(imagesIndex: Int, imageData: ByteArray): Bitmap = coroutineScope {
-        synchronized(cacheLock) {
-            memoryCache.get(imagesIndex)
-        }?.let { return@coroutineScope it }
+    suspend fun getOrDecodeImage(imagesIndex: Int, imageData: ByteArray): Bitmap =
+        coroutineScope {
+            synchronized(cacheLock) {
+                memoryCache.get(imagesIndex)
+            }?.let { return@coroutineScope it }
 
-        if (imageData.isEmpty()) return@coroutineScope placeholderBitmap
+            if (imageData.isEmpty()) return@coroutineScope placeholderBitmap
 
-        val task = activeTasks.getOrPut(imagesIndex) {
-            async(Dispatchers.IO) {
-                val decoded =
-                    BitmapFactory.decodeByteArray(imageData, 0, imageData.size, bitmapOptions)
-                        ?: run {
-                            AppLog.w(TAG, "decode videoshot bitmap failed: index=$imagesIndex size=${imageData.size}")
-                            placeholderBitmap
+            val task =
+                activeTasks.getOrPut(imagesIndex) {
+                    async(Dispatchers.IO) {
+                        val decoded =
+                            BitmapFactory.decodeByteArray(imageData, 0, imageData.size, bitmapOptions)
+                                ?: run {
+                                    AppLog.w(TAG, "decode videoshot bitmap failed: index=$imagesIndex size=${imageData.size}")
+                                    placeholderBitmap
+                                }
+                        synchronized(cacheLock) {
+                            memoryCache.put(imagesIndex, decoded)
                         }
-                synchronized(cacheLock) {
-                    memoryCache.put(imagesIndex, decoded)
+                        decoded
+                    }
                 }
-                decoded
+            try {
+                return@coroutineScope task.await()
+            } finally {
+                activeTasks.remove(imagesIndex)
             }
         }
-        try {
-            return@coroutineScope task.await()
-        } finally {
-            activeTasks.remove(imagesIndex)
-        }
-    }
 
     fun clear() {
         synchronized(cacheLock) {

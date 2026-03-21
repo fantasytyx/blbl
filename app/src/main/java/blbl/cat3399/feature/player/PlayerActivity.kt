@@ -305,6 +305,8 @@ class PlayerActivity : BaseActivity() {
     internal var currentVideoShot: VideoShot? = null
     internal var videoShotImageCache: VideoShotImageCache? = null
     internal var videoShotFetchJob: Job? = null
+    internal var currentVideoContentWidth: Int? = null
+    internal var currentVideoContentHeight: Int? = null
 
     private fun isPlayerTeardownInProgress(): Boolean {
         return exitCleanupRequested || isFinishing || isDestroyed || decoderReleaseRequestedOnStopReason != null || resumeAfterDecoderRelease
@@ -904,10 +906,13 @@ class PlayerActivity : BaseActivity() {
                 }
 
                 override fun onVideoSizeChanged(width: Int, height: Int) {
-                    if (engine.kind != PlayerEngineKind.IjkPlayer) return
                     if (width <= 0 || height <= 0) return
+                    currentVideoContentWidth = width
+                    currentVideoContentHeight = height
                     debug.videoInputWidth = width
                     debug.videoInputHeight = height
+                    binding.videoShotPreview.setContentAspectRatio(width, height)
+                    if (engine.kind != PlayerEngineKind.IjkPlayer) return
                     binding.ijkAspect.setAspectRatio(width.toFloat() / height.toFloat())
                     when (val view = ijkRenderView) {
                         is SurfaceView -> {
@@ -1859,7 +1864,7 @@ class PlayerActivity : BaseActivity() {
                                 BiliClient.prefs.playerVideoShotPreviewSize != AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF
                         if (hasVideoShot) {
                             binding.videoShotPreview.visibility = View.VISIBLE
-                            updateVideoShotPreview(progress, SEEK_MAX, previewPos, duration, binding.seekProgress)
+                            updateVideoShotPreview(progress, SEEK_MAX, previewPos, binding.seekProgress)
                         } else {
                             binding.videoShotPreview.visibility = View.GONE
                         }

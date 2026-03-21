@@ -146,12 +146,9 @@
     <dimen name="player_buffering_text_margin_top">12dp</dimen>
     <dimen name="player_buffering_text_size">20sp</dimen>
 
-    <dimen name="player_videoshot_preview_width_small">128dp</dimen>
-    <dimen name="player_videoshot_preview_height_small">72dp</dimen>
-    <dimen name="player_videoshot_preview_width_medium">160dp</dimen>
-    <dimen name="player_videoshot_preview_height_medium">90dp</dimen>
-    <dimen name="player_videoshot_preview_width_large">192dp</dimen>
-    <dimen name="player_videoshot_preview_height_large">108dp</dimen>
+    <dimen name="player_videoshot_preview_short_edge_small">80dp</dimen>
+    <dimen name="player_videoshot_preview_short_edge_medium">120dp</dimen>
+    <dimen name="player_videoshot_preview_short_edge_large">160dp</dimen>
     <dimen name="player_videoshot_preview_margin_bottom">8dp</dimen>
     <dimen name="player_videoshot_preview_elevation">4dp</dimen>
     <dimen name="player_videoshot_preview_corner_radius">12dp</dimen>
