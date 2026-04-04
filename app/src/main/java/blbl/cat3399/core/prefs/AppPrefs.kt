@@ -391,6 +391,18 @@ class AppPrefs(context: Context) {
         get() = prefs.getFloat(KEY_PLAYER_SPEED, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_PLAYER_SPEED, value).apply()
 
+    var playerShortSeekStepSeconds: Int
+        get() =
+            normalizePlayerShortSeekStepSeconds(
+                prefs.getInt(KEY_PLAYER_SHORT_SEEK_STEP_SECONDS, PLAYER_SHORT_SEEK_STEP_SECONDS_DEFAULT),
+            )
+        set(value) =
+            prefs.edit()
+                .putInt(
+                    KEY_PLAYER_SHORT_SEEK_STEP_SECONDS,
+                    normalizePlayerShortSeekStepSeconds(value),
+                ).apply()
+
     var playerHoldSeekSpeed: Float
         get() {
             val v = prefs.getFloat(KEY_PLAYER_HOLD_SEEK_SPEED, PLAYER_HOLD_SEEK_SPEED_DEFAULT)
@@ -799,6 +811,10 @@ class AppPrefs(context: Context) {
         return (snapped / 100f).coerceIn(UI_SCALE_FACTOR_MIN, UI_SCALE_FACTOR_MAX)
     }
 
+    private fun normalizePlayerShortSeekStepSeconds(value: Int): Int {
+        return if (PLAYER_SHORT_SEEK_STEP_SECONDS_OPTIONS.contains(value)) value else PLAYER_SHORT_SEEK_STEP_SECONDS_DEFAULT
+    }
+
     companion object {
         const val STARTUP_PAGE_HOME = "home"
         const val STARTUP_PAGE_CATEGORY = "category"
@@ -876,6 +892,7 @@ class AppPrefs(context: Context) {
         private const val KEY_SUBTITLE_BOTTOM_PADDING_FRACTION = "subtitle_bottom_padding_fraction"
         private const val KEY_SUBTITLE_BACKGROUND_OPACITY = "subtitle_background_opacity"
         private const val KEY_PLAYER_SPEED = "player_speed"
+        private const val KEY_PLAYER_SHORT_SEEK_STEP_SECONDS = "player_short_seek_step_seconds"
         private const val KEY_PLAYER_HOLD_SEEK_SPEED = "player_hold_seek_speed"
         private const val KEY_PLAYER_HOLD_SEEK_MODE = "player_hold_seek_mode"
         private const val KEY_PLAYER_AUTO_RESUME_ENABLED = "player_auto_resume_enabled"
@@ -945,6 +962,9 @@ class AppPrefs(context: Context) {
         const val PLAYER_PLAYBACK_MODE_PARTS_LIST = "parts_list"
         const val PLAYER_PLAYBACK_MODE_PARTS_LIST_THEN_RECOMMEND = "parts_list_then_recommend"
         const val PLAYER_PLAYBACK_MODE_RECOMMEND = "recommend"
+
+        val PLAYER_SHORT_SEEK_STEP_SECONDS_OPTIONS: Set<Int> = linkedSetOf(3, 5, 8, 10, 15, 20)
+        const val PLAYER_SHORT_SEEK_STEP_SECONDS_DEFAULT = 10
 
         const val PLAYER_HOLD_SEEK_MODE_SPEED = "speed"
         const val PLAYER_HOLD_SEEK_MODE_SCRUB = "scrub"

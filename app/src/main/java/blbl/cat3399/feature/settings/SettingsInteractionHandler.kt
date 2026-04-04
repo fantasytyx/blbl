@@ -636,6 +636,7 @@ class SettingsInteractionHandler(
                     .put("subtitle_bottom_padding_fraction", prefs.subtitleBottomPaddingFraction)
                     .put("subtitle_background_opacity", prefs.subtitleBackgroundOpacity)
                     .put("speed", prefs.playerSpeed)
+                    .put("short_seek_step_seconds", prefs.playerShortSeekStepSeconds)
                     .put("hold_seek_speed", prefs.playerHoldSeekSpeed)
                     .put("hold_seek_mode", prefs.playerHoldSeekMode)
                     .put("auto_resume_enabled", prefs.playerAutoResumeEnabled)
@@ -1193,6 +1194,10 @@ class SettingsInteractionHandler(
                     if (v != null) prefs.playerSpeed = v.coerceIn(0.25f, 3.0f)
                     renderer.refreshSection(entry.id)
                 }
+            }
+
+            SettingId.PlayerShortSeekStepSeconds -> {
+                showPlayerShortSeekStepDialog(sectionIndex = state.currentSectionIndex, focusId = entry.id)
             }
 
             SettingId.PlayerHoldSeekSpeed -> {
@@ -2204,6 +2209,22 @@ class SettingsInteractionHandler(
                 renderer.showSection(sectionIndex, focusId = focusId)
             },
         )
+    }
+
+    private fun showPlayerShortSeekStepDialog(sectionIndex: Int, focusId: SettingId) {
+        val prefs = BiliClient.prefs
+        val options = AppPrefs.PLAYER_SHORT_SEEK_STEP_SECONDS_OPTIONS.toList()
+        showChoiceDialog(
+            title = "点按快进秒数",
+            items = options.map(SettingsText::seekStepSecondsText),
+            current = SettingsText.seekStepSecondsText(prefs.playerShortSeekStepSeconds),
+        ) { selected ->
+            val value =
+                options.firstOrNull { SettingsText.seekStepSecondsText(it) == selected }
+                    ?: AppPrefs.PLAYER_SHORT_SEEK_STEP_SECONDS_DEFAULT
+            prefs.playerShortSeekStepSeconds = value
+            renderer.showSection(sectionIndex, focusId = focusId)
+        }
     }
 
     private fun showClearLoginDialog(sectionIndex: Int, focusId: SettingId) {

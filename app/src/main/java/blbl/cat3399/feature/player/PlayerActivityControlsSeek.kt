@@ -369,7 +369,6 @@ internal fun PlayerActivity.smartSeek(direction: Int, showControls: Boolean, hin
     val sameDir = direction == smartSeekDirection
     val within = now - smartSeekLastAtMs <= PlayerActivity.SMART_SEEK_WINDOW_MS
     val continued = sameDir && within
-    smartSeekStreak = if (continued) (smartSeekStreak + 1) else 1
     smartSeekDirection = direction
     smartSeekLastAtMs = now
 
@@ -379,14 +378,14 @@ internal fun PlayerActivity.smartSeek(direction: Int, showControls: Boolean, hin
         noteUserInteraction()
     }
 
-    val step = smartSeekStepMs(smartSeekStreak)
+    val step = smartSeekStepMs()
     seekRelative(step * direction)
     smartSeekTotalMs = if (continued) (smartSeekTotalMs + step) else step
     if (hintKind == SeekHintKind.Step) showSeekStepHint(direction, smartSeekTotalMs)
 }
 
-internal fun PlayerActivity.smartSeekStepMs(_streak: Int): Long {
-    return PlayerActivity.SMART_SEEK_STEP_MS
+internal fun PlayerActivity.smartSeekStepMs(): Long {
+    return BiliClient.prefs.playerShortSeekStepSeconds * 1_000L
 }
 
 internal fun PlayerActivity.startHoldSeek(direction: Int, showControls: Boolean) {

@@ -37,6 +37,7 @@ enum class SettingId(
     PlayerCdnPreference("player_cdn_preference"),
     LiveHighBitrateEnabled("live_high_bitrate_enabled"),
     PlayerSpeed("player_speed"),
+    PlayerShortSeekStepSeconds("player_short_seek_step_seconds"),
     PlayerHoldSeekSpeed("player_hold_seek_speed"),
     PlayerHoldSeekMode("player_hold_seek_mode"),
     PlayerAutoResumeEnabled("player_auto_resume_enabled"),

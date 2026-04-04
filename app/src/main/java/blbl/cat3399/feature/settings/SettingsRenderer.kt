@@ -245,6 +245,12 @@ class SettingsRenderer(
                     SettingEntry(SettingId.PlayerPreferredAudioId, "默认音轨", SettingsText.audioText(prefs.playerPreferredAudioId), null),
                     SettingEntry(SettingId.PlayerSpeed, "默认播放速度", String.format(java.util.Locale.US, "%.2fx", prefs.playerSpeed), null),
                     SettingEntry(
+                        SettingId.PlayerShortSeekStepSeconds,
+                        "点按快进秒数",
+                        SettingsText.seekStepSecondsText(prefs.playerShortSeekStepSeconds),
+                        null,
+                    ),
+                    SettingEntry(
                         SettingId.PlayerHoldSeekSpeed,
                         "长按快进倍率",
                         String.format(java.util.Locale.US, "%.2fx", prefs.playerHoldSeekSpeed),
