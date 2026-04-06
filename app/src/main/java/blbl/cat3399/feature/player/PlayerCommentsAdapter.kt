@@ -198,7 +198,7 @@ class PlayerCommentsAdapter(
                 binding.rowMeta.visibility = View.GONE
             }
 
-            ImageLoader.loadInto(binding.ivAvatar, item.avatarUrl)
+            ImageLoader.loadInto(binding.ivAvatar, ImageUrl.avatar(item.avatarUrl))
 
             binding.root.setOnClickListener {
                 val shouldExpand = !isExpanded && isMessageEllipsized(binding.tvMessage)

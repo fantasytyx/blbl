@@ -7,6 +7,7 @@ import blbl.cat3399.R
 import blbl.cat3399.core.api.BiliApi
 import blbl.cat3399.core.api.BiliApiException
 import blbl.cat3399.core.image.ImageLoader
+import blbl.cat3399.core.image.ImageUrl
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.ThemeColor
@@ -122,7 +123,7 @@ internal fun PlayerActivity.updateUpQuickCardUi() {
 
     val upName = currentUpName?.trim().orEmpty().ifBlank { "UP主" }
     binding.tvUpQuickName.text = upName
-    ImageLoader.loadInto(binding.ivUpQuickAvatar, currentUpAvatar)
+    ImageLoader.loadInto(binding.ivUpQuickAvatar, ImageUrl.avatar(currentUpAvatar))
 
     val selfMid = BiliClient.cookies.getCookieValue("DedeUserID")?.trim()?.toLongOrNull()?.takeIf { it > 0L }
     val isSelf = selfMid != null && selfMid == currentUpMid
