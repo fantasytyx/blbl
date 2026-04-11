@@ -11,6 +11,7 @@ import blbl.cat3399.core.log.AppLog
 import blbl.cat3399.core.model.Danmaku
 import blbl.cat3399.feature.player.danmaku.model.RenderSnapshot
 import java.util.concurrent.Semaphore
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicInteger
@@ -38,6 +39,7 @@ internal class DanmakuPlayer(
         private const val MSG_OP_VIEWPORT = 3201
         private const val MSG_OP_CONFIG = 3202
         private const val MSG_OP_RELEASE = 3999
+        private const val FRAME_ACQUIRE_TIMEOUT_MS = 12L
     }
 
     private val cacheManager =
@@ -77,6 +79,9 @@ internal class DanmakuPlayer(
 
     @Volatile
     private var started: Boolean = false
+
+    @Volatile
+    private var frameChainRunning: Boolean = false
 
     @Volatile
     private var released: Boolean = false
@@ -177,6 +182,7 @@ internal class DanmakuPlayer(
     fun stop() {
         if (!started) return
         started = false
+        frameChainRunning = false
         releaseSemaphoreIfNeeded()
         Choreographer.getInstance().removeFrameCallback(frameCallback)
     }
@@ -185,6 +191,7 @@ internal class DanmakuPlayer(
         if (released) return
         released = true
         started = false
+        frameChainRunning = false
         releaseSemaphoreIfNeeded()
         runCatching {
             actionHandler.obtainMessage(MSG_OP_RELEASE).sendToTarget()
@@ -248,6 +255,7 @@ internal class DanmakuPlayer(
         } else if (started) {
             // Freeze danmaku on pause/buffering: no need to keep 60fps update loop running.
             started = false
+            frameChainRunning = false
             releaseSemaphoreIfNeeded()
             Choreographer.getInstance().removeFrameCallback(frameCallback)
         }
@@ -272,12 +280,16 @@ internal class DanmakuPlayer(
         // Obtain render snapshot first, then release semaphore to allow ActionThread to compute next frame.
         val snapshot = engineMain.renderSnapshot()
         releaseSemaphoreIfNeeded()
+        if (started && !frameChainRunning) {
+            actionHandler.post { postFrameCallback() }
+        }
         engineMain.draw(canvas, snapshot, config)
     }
 
     private fun postFrameCallback() {
         if (released) return
         if (!started) return
+        frameChainRunning = true
         Choreographer.getInstance().postFrameCallback(frameCallback)
     }
 
@@ -298,10 +310,12 @@ internal class DanmakuPlayer(
             when (msg.what) {
                 MSG_FRAME_UPDATE -> {
                     if (released || !started) return
-                    postFrameCallback()
                     try {
                         engineAction.preAct()
-                        drawSemaphore.acquire()
+                        if (!drawSemaphore.tryAcquire(FRAME_ACQUIRE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                            frameChainRunning = false
+                            return
+                        }
                         if (released || !started) return
                         val sampleAct = perfSampleRequested.getAndSet(false)
                         val shouldMeasure = debugEnabled || sampleAct
@@ -322,10 +336,12 @@ internal class DanmakuPlayer(
                         }
                         view.invalidateDanmakuAreaOnAnimation()
                     } catch (ie: InterruptedException) {
-                        // Ignore.
+                        frameChainRunning = false
+                        return
                     } catch (t: Throwable) {
                         AppLog.w(TAG, "updateFrame crashed", t)
                     }
+                    postFrameCallback()
                 }
 
                 MSG_OP_SET -> {
