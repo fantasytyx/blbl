@@ -647,6 +647,7 @@ class SettingsInteractionHandler(
                     .put("down_key_osd_focus_target", prefs.playerDownKeyOsdFocusTarget)
                     .put("toggle_play_state_show_osd", prefs.playerTogglePlayStateShowOsd)
                     .put("persistent_bottom_progress_enabled", prefs.playerPersistentBottomProgressEnabled)
+                    .put("touch_gestures_enabled", prefs.playerTouchGesturesEnabled)
                     .put("playback_mode", prefs.playerPlaybackMode)
                     .put("osd_buttons", osdButtons),
             )
@@ -1428,6 +1429,12 @@ class SettingsInteractionHandler(
 
             SettingId.PlayerPersistentBottomProgressEnabled -> {
                 prefs.playerPersistentBottomProgressEnabled = !prefs.playerPersistentBottomProgressEnabled
+                renderer.refreshSection(entry.id)
+            }
+
+            SettingId.PlayerTouchGesturesEnabled -> {
+                prefs.playerTouchGesturesEnabled = !prefs.playerTouchGesturesEnabled
+                AppToast.show(activity, "触摸手势：${if (prefs.playerTouchGesturesEnabled) "开" else "关"}")
                 renderer.refreshSection(entry.id)
             }
 

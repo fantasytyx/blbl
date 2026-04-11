@@ -1647,18 +1647,6 @@ class PlayerActivity : BaseActivity() {
                     if (showListPanelFromShortcut()) return true
                 }
                 setControlsVisible(true)
-                // Narrow exception: when touch-lock button is focused and UP quick card is visible,
-                // allow UP to enter the quick card instead of forcing seek bar focus.
-                if (
-                    currentFocus === binding.btnTouchLock &&
-                    binding.cardUpQuick.visibility == View.VISIBLE &&
-                    binding.btnUpQuickProfile.visibility == View.VISIBLE &&
-                    binding.btnUpQuickProfile.isEnabled &&
-                    binding.btnUpQuickProfile.isFocusable
-                ) {
-                    binding.btnUpQuickProfile.requestFocus()
-                    return true
-                }
                 if (!binding.seekProgress.isFocused) {
                     focusSeekBar()
                     return true

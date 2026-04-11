@@ -10,6 +10,8 @@ import android.view.View
 import android.view.ViewConfiguration
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.R
+import blbl.cat3399.core.net.BiliClient
+import blbl.cat3399.databinding.ViewPlayerTouchOverlayBinding
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -17,9 +19,13 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal fun PlayerActivity.initTouchGestures() {
+    if (!BiliClient.prefs.playerTouchGesturesEnabled) {
+        releaseTouchGestures()
+        return
+    }
     if (touchController != null) return
     touchController =
-        PlayerTouchController(this).also { controller ->
+        PlayerTouchController(this, requireTouchOverlayBinding()).also { controller ->
             controller.install()
         }
 }
@@ -33,10 +39,19 @@ internal fun PlayerActivity.onTouchOverlayStateChanged() {
 internal fun PlayerActivity.releaseTouchGestures() {
     touchController?.release()
     touchController = null
+    tapSeekActiveDirection = 0
+    tapSeekActiveUntilMs = 0L
+}
+
+private fun PlayerActivity.requireTouchOverlayBinding(): ViewPlayerTouchOverlayBinding {
+    val existing = findViewById<View>(R.id.player_touch_overlay_root)
+    if (existing != null) return ViewPlayerTouchOverlayBinding.bind(existing)
+    return ViewPlayerTouchOverlayBinding.bind(binding.playerTouchOverlayStub.inflate())
 }
 
 internal class PlayerTouchController(
     private val activity: PlayerActivity,
+    private val overlayBinding: ViewPlayerTouchOverlayBinding,
 ) {
     private enum class TouchGestureMode {
         None,
@@ -142,9 +157,10 @@ internal class PlayerTouchController(
     private var lockUiHideJob: Job? = null
 
     fun install() {
-        binding.touchGestureLayer.visibility = View.VISIBLE
-        binding.touchGestureLayer.setOnTouchListener(this::onTouch)
-        binding.btnTouchLock.setOnClickListener {
+        overlayBinding.root.visibility = View.VISIBLE
+        overlayBinding.touchGestureLayer.visibility = View.VISIBLE
+        overlayBinding.touchGestureLayer.setOnTouchListener(this::onTouch)
+        overlayBinding.btnTouchLock.setOnClickListener {
             if (touchLocked) {
                 unlockTouch()
             } else {
@@ -176,10 +192,11 @@ internal class PlayerTouchController(
     fun release() {
         onStop()
         lockUiHideJob?.cancel()
-        binding.touchGestureLayer.setOnTouchListener(null)
-        binding.touchGestureLayer.visibility = View.GONE
-        binding.btnTouchLock.setOnClickListener(null)
-        binding.btnTouchLock.visibility = View.GONE
+        overlayBinding.touchGestureLayer.setOnTouchListener(null)
+        overlayBinding.touchGestureLayer.visibility = View.GONE
+        overlayBinding.btnTouchLock.setOnClickListener(null)
+        overlayBinding.btnTouchLock.visibility = View.GONE
+        overlayBinding.root.visibility = View.GONE
     }
 
     private fun onTouch(v: View, event: MotionEvent): Boolean {
@@ -417,7 +434,7 @@ internal class PlayerTouchController(
     }
 
     private fun updateBrightnessGesture(y: Float) {
-        val height = binding.touchGestureLayer.height.coerceAtLeast(1)
+        val height = overlayBinding.touchGestureLayer.height.coerceAtLeast(1)
         val delta = ((downY - y) / height.toFloat()).coerceIn(-1f, 1f)
         val brightness =
             (brightnessStart + delta).coerceIn(
@@ -440,7 +457,7 @@ internal class PlayerTouchController(
     private fun updateVolumeGesture(y: Float) {
         val manager = audioManager ?: return
         val maxVolume = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
-        val height = binding.touchGestureLayer.height.coerceAtLeast(1)
+        val height = overlayBinding.touchGestureLayer.height.coerceAtLeast(1)
         val deltaSteps = ((downY - y) / height.toFloat() * maxVolume.toFloat()).roundToInt()
         val volume = (volumeStart + deltaSteps).coerceIn(0, maxVolume)
         manager.setStreamVolume(AudioManager.STREAM_MUSIC, volume, 0)
@@ -477,7 +494,7 @@ internal class PlayerTouchController(
             activity.getString(R.string.player_touch_boost_fmt, activity.holdSeekSpeedText(speed)),
             hold = true,
         )
-        binding.touchGestureLayer.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        overlayBinding.touchGestureLayer.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
     }
 
     private fun stopBoostPlayback() {
@@ -549,18 +566,18 @@ internal class PlayerTouchController(
                     !activity.isBottomCardPanelVisible() &&
                     binding.commentImageViewer.visibility != View.VISIBLE
             }
-        binding.btnTouchLock.visibility = if (visible) View.VISIBLE else View.GONE
-        binding.btnTouchLock.setImageResource(
+        overlayBinding.btnTouchLock.visibility = if (visible) View.VISIBLE else View.GONE
+        overlayBinding.btnTouchLock.setImageResource(
             if (touchLocked) R.drawable.ic_player_lock else R.drawable.ic_player_unlock,
         )
-        binding.btnTouchLock.contentDescription =
+        overlayBinding.btnTouchLock.contentDescription =
             activity.getString(
                 if (touchLocked) R.string.player_touch_unlock else R.string.player_touch_lock,
             )
     }
 
     private fun gestureLayerWidth(): Float {
-        return binding.touchGestureLayer.width.toFloat().takeIf { it > 0f }
+        return overlayBinding.touchGestureLayer.width.toFloat().takeIf { it > 0f }
             ?: binding.playerView.width.toFloat()
     }
 

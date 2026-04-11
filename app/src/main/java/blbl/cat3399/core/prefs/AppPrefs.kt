@@ -2,6 +2,7 @@ package blbl.cat3399.core.prefs
 
 import android.content.Context
 import android.provider.Settings
+import blbl.cat3399.core.tv.isTvDevice
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,6 +12,7 @@ import kotlin.math.roundToInt
 class AppPrefs(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences("blbl_prefs", Context.MODE_PRIVATE)
+    private val defaultPlayerTouchGesturesEnabled by lazy(LazyThreadSafetyMode.NONE) { !appContext.isTvDevice() }
 
     var disclaimerAccepted: Boolean
         get() = prefs.getBoolean(KEY_DISCLAIMER_ACCEPTED, false)
@@ -583,6 +585,13 @@ class AppPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS, false)
         set(value) = prefs.edit().putBoolean(KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS, value).apply()
 
+    var playerTouchGesturesEnabled: Boolean
+        get() {
+            if (!prefs.contains(KEY_PLAYER_TOUCH_GESTURES_ENABLED)) return defaultPlayerTouchGesturesEnabled
+            return prefs.getBoolean(KEY_PLAYER_TOUCH_GESTURES_ENABLED, defaultPlayerTouchGesturesEnabled)
+        }
+        set(value) = prefs.edit().putBoolean(KEY_PLAYER_TOUCH_GESTURES_ENABLED, value).apply()
+
     var playerVideoShotPreviewSize: String
         get() {
             val raw = prefs.getString(KEY_PLAYER_VIDEOSHOT_PREVIEW_SIZE, PLAYER_VIDEOSHOT_PREVIEW_SIZE_MEDIUM)
@@ -907,6 +916,7 @@ class AppPrefs(context: Context) {
         private const val KEY_PLAYER_DOWN_KEY_OSD_FOCUS_TARGET = "player_down_key_osd_focus_target"
         private const val KEY_PLAYER_TOGGLE_PLAY_STATE_SHOW_OSD = "player_toggle_play_state_show_osd"
         private const val KEY_PLAYER_PERSISTENT_BOTTOM_PROGRESS = "player_persistent_bottom_progress"
+        private const val KEY_PLAYER_TOUCH_GESTURES_ENABLED = "player_touch_gestures_enabled"
         private const val KEY_PLAYER_VIDEOSHOT_PREVIEW_SIZE = "player_videoshot_preview_size"
         private const val KEY_PLAYER_AUDIO_BALANCE_LEVEL = "player_audio_balance_level"
         private const val KEY_PLAYER_PLAYBACK_MODE = "player_playback_mode"

@@ -43,16 +43,12 @@
         app:layout_constraintStart_toStartOf="@id/player_view"
         app:layout_constraintTop_toTopOf="@id/player_view" />
 
-    <View
-        android:id="@+id/touch_gesture_layer"
+    <ViewStub
+        android:id="@+id/player_touch_overlay_stub"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="@android:color/transparent"
-        android:clickable="true"
-        android:defaultFocusHighlightEnabled="false"
-        android:focusable="false"
-        android:importantForAccessibility="no"
-        android:visibility="gone"
+        android:inflatedId="@+id/player_touch_overlay_root"
+        android:layout="@layout/view_player_touch_overlay"
         app:layout_constraintBottom_toBottomOf="@id/player_view"
         app:layout_constraintEnd_toEndOf="@id/player_view"
         app:layout_constraintStart_toStartOf="@id/player_view"
@@ -286,7 +282,7 @@
             android:gravity="center_vertical"
             android:nextFocusRight="@id/btn_up_quick_follow"
             android:nextFocusUp="@id/btn_up_quick_profile"
-            android:nextFocusDown="@id/btn_touch_lock"
+            android:nextFocusDown="@id/seek_progress"
             android:orientation="horizontal"
             android:paddingStart="@dimen/player_up_quick_profile_padding_h"
             android:paddingEnd="@dimen/player_up_quick_profile_padding_h"
@@ -328,7 +324,7 @@
             android:minWidth="@dimen/player_up_quick_follow_min_width"
             android:nextFocusLeft="@id/btn_up_quick_profile"
             android:nextFocusUp="@id/btn_up_quick_follow"
-            android:nextFocusDown="@id/btn_touch_lock"
+            android:nextFocusDown="@id/seek_progress"
             android:paddingStart="@dimen/player_up_quick_follow_padding_h"
             android:paddingEnd="@dimen/player_up_quick_follow_padding_h"
             android:stateListAnimator="@animator/blbl_focus_scale"
@@ -685,24 +681,6 @@
         android:visibility="gone"
         app:layout_constraintBottom_toTopOf="@id/barrier_player_bottom_overlay_top"
         app:layout_constraintStart_toStartOf="@id/player_view" />
-
-    <ImageButton
-        android:id="@+id/btn_touch_lock"
-        android:layout_width="@dimen/player_touch_lock_button_size"
-        android:layout_height="@dimen/player_touch_lock_button_size"
-        android:layout_marginStart="@dimen/player_touch_lock_margin_start"
-        android:background="?attr/blblFocusBgRound"
-        android:contentDescription="@string/player_touch_lock"
-        android:focusable="false"
-        android:padding="@dimen/player_touch_lock_button_padding"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_player_unlock"
-        android:visibility="gone"
-        app:layout_constraintBottom_toBottomOf="@id/player_view"
-        app:layout_constraintStart_toStartOf="@id/player_view"
-        app:layout_constraintTop_toTopOf="@id/player_view"
-        app:layout_constraintVertical_bias="0.5"
-        app:tint="@color/player_button_tint" />
 
     <View
         android:id="@+id/recommend_scrim"

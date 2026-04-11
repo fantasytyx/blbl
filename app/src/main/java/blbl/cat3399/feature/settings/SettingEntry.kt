@@ -63,6 +63,7 @@ enum class SettingId(
     PlayerDownKeyOsdFocusTarget("player_down_key_osd_focus_target"),
     PlayerTogglePlayStateShowOsd("player_toggle_play_state_show_osd"),
     PlayerPersistentBottomProgressEnabled("player_persistent_bottom_progress_enabled"),
+    PlayerTouchGesturesEnabled("player_touch_gestures_enabled"),
     PlayerVideoShotPreviewSize("player_videoshot_preview_size"),
 
     // 弹幕设置

@@ -315,6 +315,12 @@ class SettingsRenderer(
                         null,
                     ),
                     SettingEntry(
+                        SettingId.PlayerTouchGesturesEnabled,
+                        "触摸手势",
+                        if (prefs.playerTouchGesturesEnabled) "开" else "关",
+                        "单击/双击/滑动调节/触摸锁",
+                    ),
+                    SettingEntry(
                         SettingId.PlayerVideoShotPreviewSize,
                         "缩略图显示",
                         SettingsText.videoShotPreviewSizeText(prefs.playerVideoShotPreviewSize),
