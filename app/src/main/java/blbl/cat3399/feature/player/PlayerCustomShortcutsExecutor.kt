@@ -48,19 +48,14 @@ internal fun PlayerActivity.dispatchPlayerCustomShortcutIfNeeded(event: KeyEvent
     val keyCode = event.keyCode
     if (keyCode <= 0 || keyCode == KeyEvent.KEYCODE_UNKNOWN) return false
     if (PlayerCustomShortcutsStore.isForbiddenKeyCode(keyCode)) return false
-
-    // Avoid breaking navigation inside side panels: keep DPAD/ENTER working there.
-    if (isSidePanelVisible()) {
-        when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN,
-            KeyEvent.KEYCODE_DPAD_LEFT,
-            KeyEvent.KEYCODE_DPAD_RIGHT,
-            KeyEvent.KEYCODE_DPAD_CENTER,
-            KeyEvent.KEYCODE_ENTER,
-            KeyEvent.KEYCODE_NUMPAD_ENTER,
-            -> return false
-        }
+    if (
+        !PlayerCustomShortcutInputPolicy.canDispatchInVod(
+            hasInteractiveOsd = osdMode != PlayerActivity.OsdMode.Hidden,
+            hasSidePanel = isSidePanelVisible(),
+            hasBottomCardPanel = isBottomCardPanelVisible(),
+        )
+    ) {
+        return false
     }
 
     val binding = BiliClient.prefs.playerCustomShortcuts.firstOrNull { it.keyCode == keyCode } ?: return false

@@ -53,6 +53,7 @@ import blbl.cat3399.core.ui.popup.PopupHost
 import blbl.cat3399.databinding.ActivityPlayerBinding
 import blbl.cat3399.databinding.DialogLiveChatBinding
 import blbl.cat3399.feature.player.AudioBalanceLevel
+import blbl.cat3399.feature.player.PlayerCustomShortcutInputPolicy
 import blbl.cat3399.feature.player.PlayerDebugMetrics
 import blbl.cat3399.feature.player.PlayerOsdSizing
 import blbl.cat3399.feature.player.PlayerSettingsAdapter
@@ -659,19 +660,13 @@ class LivePlayerActivity : BaseActivity() {
         val keyCode = event.keyCode
         if (keyCode <= 0 || keyCode == KeyEvent.KEYCODE_UNKNOWN) return false
         if (PlayerCustomShortcutsStore.isForbiddenKeyCode(keyCode)) return false
-
-        // Keep DPAD navigation working inside settings panel.
-        if (binding.settingsPanel.visibility == View.VISIBLE) {
-            when (keyCode) {
-                KeyEvent.KEYCODE_DPAD_UP,
-                KeyEvent.KEYCODE_DPAD_DOWN,
-                KeyEvent.KEYCODE_DPAD_LEFT,
-                KeyEvent.KEYCODE_DPAD_RIGHT,
-                KeyEvent.KEYCODE_DPAD_CENTER,
-                KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER,
-                -> return false
-            }
+        if (
+            !PlayerCustomShortcutInputPolicy.canDispatchInLive(
+                hasInteractiveOsd = controlsVisible,
+                hasSettingsPanel = binding.settingsPanel.visibility == View.VISIBLE,
+            )
+        ) {
+            return false
         }
 
         val binding = BiliClient.prefs.playerCustomShortcuts.firstOrNull { it.keyCode == keyCode } ?: return false
