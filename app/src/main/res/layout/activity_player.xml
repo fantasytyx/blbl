@@ -1344,35 +1344,35 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                app:layout_constraintGuide_percent="0.16666667" />
+                app:layout_constraintGuide_percent="0.125" />
 
             <androidx.constraintlayout.widget.Guideline
                 android:id="@+id/guideline_comment_image_right"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                app:layout_constraintGuide_percent="0.8333333" />
+                app:layout_constraintGuide_percent="0.875" />
 
             <androidx.constraintlayout.widget.Guideline
                 android:id="@+id/guideline_comment_image_top"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                app:layout_constraintGuide_percent="0.16666667" />
+                app:layout_constraintGuide_percent="0.125" />
 
             <androidx.constraintlayout.widget.Guideline
                 android:id="@+id/guideline_comment_image_bottom"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                app:layout_constraintGuide_percent="0.8333333" />
+                app:layout_constraintGuide_percent="0.875" />
 
-            <ImageView
+            <blbl.cat3399.feature.player.PlayerCommentImageView
                 android:id="@+id/iv_comment_image"
                 android:layout_width="0dp"
                 android:layout_height="0dp"
+                android:clickable="true"
                 android:contentDescription="@string/app_name"
-                android:scaleType="fitCenter"
                 app:layout_constraintBottom_toBottomOf="@id/guideline_comment_image_bottom"
                 app:layout_constraintEnd_toEndOf="@id/guideline_comment_image_right"
                 app:layout_constraintStart_toStartOf="@id/guideline_comment_image_left"

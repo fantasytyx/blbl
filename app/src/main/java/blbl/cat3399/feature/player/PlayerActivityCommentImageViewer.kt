@@ -1,94 +1,47 @@
 package blbl.cat3399.feature.player
 
-import android.graphics.Rect
-import android.graphics.RectF
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
-import android.widget.ImageView
 import blbl.cat3399.core.image.ImageLoader
-import kotlin.math.abs
 
 internal fun PlayerActivity.initCommentImageViewer() {
     binding.commentImageViewer.visibility = View.GONE
     ImageLoader.loadInto(binding.ivCommentImage, null)
+    binding.ivCommentImage.resetViewport()
+
+    binding.commentImageViewer.setOnClickListener {
+        if (!isCommentImageViewerVisible()) return@setOnClickListener
+        closeCommentImageViewer()
+    }
 
     binding.ivCommentImagePrev.setOnClickListener {
         if (!isCommentImageViewerVisible()) return@setOnClickListener
+        if (binding.ivCommentImage.isZoomed()) return@setOnClickListener
         commentImageViewerPrev()
     }
     binding.ivCommentImageNext.setOnClickListener {
         if (!isCommentImageViewerVisible()) return@setOnClickListener
+        if (binding.ivCommentImage.isZoomed()) return@setOnClickListener
         commentImageViewerNext()
     }
-
-    var downX = 0f
-    var downY = 0f
-    var downInsideImage = false
-    var touchPassthroughToChildren = false
-
-    binding.commentImageViewer.setOnTouchListener { _, event ->
-        if (!isCommentImageViewerVisible()) return@setOnTouchListener false
-
-        when (event.actionMasked) {
-            MotionEvent.ACTION_DOWN -> {
-                // Allow the hint icons to handle their own click events.
-                val downInsidePrev = isTouchInsideView(binding.ivCommentImagePrev, event)
-                val downInsideNext = isTouchInsideView(binding.ivCommentImageNext, event)
-                if (downInsidePrev || downInsideNext) {
-                    touchPassthroughToChildren = true
-                    return@setOnTouchListener false
-                }
-                touchPassthroughToChildren = false
-
-                downX = event.rawX
-                downY = event.rawY
-                downInsideImage = isTouchInsideImageContent(binding.ivCommentImage, event)
-                true
-            }
-
-            MotionEvent.ACTION_UP -> {
-                if (touchPassthroughToChildren) {
-                    touchPassthroughToChildren = false
-                    return@setOnTouchListener false
-                }
-                val dx = event.rawX - downX
-                val dy = event.rawY - downY
-                val absDx = abs(dx)
-                val absDy = abs(dy)
-                val swipeThresholdPx = binding.commentImageViewer.resources.displayMetrics.density * 48f
-
-                if (commentImageViewerUrls.size > 1 && absDx > swipeThresholdPx && absDx > absDy) {
-                    if (dx < 0) {
-                        commentImageViewerNext()
-                    } else {
-                        commentImageViewerPrev()
-                    }
-                    return@setOnTouchListener true
-                }
-
-                val upInsideImage = isTouchInsideImageContent(binding.ivCommentImage, event)
-                if (!downInsideImage && !upInsideImage) {
-                    closeCommentImageViewer()
-                }
-                true
-            }
-
-            MotionEvent.ACTION_MOVE -> {
-                if (touchPassthroughToChildren) return@setOnTouchListener false
-                true
-            }
-
-            MotionEvent.ACTION_CANCEL -> {
-                if (touchPassthroughToChildren) {
-                    touchPassthroughToChildren = false
-                    return@setOnTouchListener false
-                }
-                touchPassthroughToChildren = false
-                true
-            }
-
-            else -> true
+    binding.ivCommentImage.onNavigatePrevious = {
+        if (isCommentImageViewerVisible() && !binding.ivCommentImage.isZoomed()) {
+            commentImageViewerPrev()
+        }
+    }
+    binding.ivCommentImage.onNavigateNext = {
+        if (isCommentImageViewerVisible() && !binding.ivCommentImage.isZoomed()) {
+            commentImageViewerNext()
+        }
+    }
+    binding.ivCommentImage.onBlankAreaTap = {
+        if (isCommentImageViewerVisible()) {
+            closeCommentImageViewer()
+        }
+    }
+    binding.ivCommentImage.onZoomStateChanged = {
+        if (isCommentImageViewerVisible()) {
+            updateCommentImageViewerNavigationUi()
         }
     }
 }
@@ -116,6 +69,7 @@ internal fun PlayerActivity.closeCommentImageViewer(restoreFocus: Boolean = true
 
     binding.commentImageViewer.visibility = View.GONE
     ImageLoader.loadInto(binding.ivCommentImage, null)
+    binding.ivCommentImage.resetViewport()
     commentImageViewerUrls = emptyList()
     commentImageViewerIndex = 0
 
@@ -150,22 +104,45 @@ internal fun PlayerActivity.dispatchCommentImageViewerKey(event: KeyEvent): Bool
             KeyEvent.KEYCODE_GUIDE,
             -> return true
 
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            -> {
+                binding.ivCommentImage.toggleDpadZoom()
+                return true
+            }
+
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                commentImageViewerPrev()
+                if (binding.ivCommentImage.isZoomed()) {
+                    binding.ivCommentImage.panLeft()
+                } else {
+                    commentImageViewerPrev()
+                }
                 return true
             }
 
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                commentImageViewerNext()
+                if (binding.ivCommentImage.isZoomed()) {
+                    binding.ivCommentImage.panRight()
+                } else {
+                    commentImageViewerNext()
+                }
                 return true
             }
 
-            KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_DPAD_DOWN,
-            KeyEvent.KEYCODE_DPAD_CENTER,
-            KeyEvent.KEYCODE_ENTER,
-            KeyEvent.KEYCODE_NUMPAD_ENTER,
-            -> return true
+            KeyEvent.KEYCODE_DPAD_UP -> {
+                if (binding.ivCommentImage.isZoomed()) {
+                    binding.ivCommentImage.panUp()
+                }
+                return true
+            }
+
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (binding.ivCommentImage.isZoomed()) {
+                    binding.ivCommentImage.panDown()
+                }
+                return true
+            }
         }
     }
 
@@ -199,12 +176,9 @@ private fun PlayerActivity.renderCommentImageViewer() {
 
     val idx = commentImageViewerIndex.coerceIn(0, urls.lastIndex)
     commentImageViewerIndex = idx
+    binding.ivCommentImage.resetViewport()
     ImageLoader.loadInto(binding.ivCommentImage, urls[idx])
-
-    binding.ivCommentImagePrev.visibility =
-        if (urls.size > 1 && idx > 0) View.VISIBLE else View.GONE
-    binding.ivCommentImageNext.visibility =
-        if (urls.size > 1 && idx < urls.lastIndex) View.VISIBLE else View.GONE
+    updateCommentImageViewerNavigationUi()
 }
 
 private fun PlayerActivity.commentImageViewerPrev() {
@@ -221,42 +195,11 @@ private fun PlayerActivity.commentImageViewerNext() {
     renderCommentImageViewer()
 }
 
-private fun isTouchInsideView(target: View, event: MotionEvent): Boolean {
-    val rect = Rect()
-    val visible = target.getGlobalVisibleRect(rect)
-    if (!visible) return false
-    return rect.contains(event.rawX.toInt(), event.rawY.toInt())
-}
-
-private fun isTouchInsideImageContent(target: ImageView, event: MotionEvent): Boolean {
-    if (target.visibility != View.VISIBLE) return false
-
-    val globalRect = Rect()
-    val visible = target.getGlobalVisibleRect(globalRect)
-    if (!visible) return false
-    if (!globalRect.contains(event.rawX.toInt(), event.rawY.toInt())) return false
-
-    val drawable = target.drawable ?: return false
-    val dw = drawable.intrinsicWidth
-    val dh = drawable.intrinsicHeight
-    if (dw <= 0 || dh <= 0) return false
-
-    val loc = IntArray(2)
-    target.getLocationOnScreen(loc)
-    val localX = event.rawX - loc[0]
-    val localY = event.rawY - loc[1]
-    if (localX < 0f || localY < 0f || localX > target.width.toFloat() || localY > target.height.toFloat()) {
-        return false
-    }
-
-    val content =
-        RectF(
-            0f,
-            0f,
-            dw.toFloat(),
-            dh.toFloat(),
-        )
-    target.imageMatrix.mapRect(content)
-
-    return content.contains(localX, localY)
+private fun PlayerActivity.updateCommentImageViewerNavigationUi() {
+    val urls = commentImageViewerUrls
+    val showNavigation = urls.size > 1 && !binding.ivCommentImage.isZoomed()
+    binding.ivCommentImagePrev.visibility =
+        if (showNavigation && commentImageViewerIndex > 0) View.VISIBLE else View.GONE
+    binding.ivCommentImageNext.visibility =
+        if (showNavigation && commentImageViewerIndex < urls.lastIndex) View.VISIBLE else View.GONE
 }
