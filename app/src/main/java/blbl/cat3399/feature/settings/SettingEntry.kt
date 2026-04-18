@@ -48,6 +48,7 @@ enum class SettingId(
     PlayerAutoSkipServerBaseUrl("player_auto_skip_server_base_url"),
     PlayerOpenDetailBeforePlay("player_open_detail_before_play"),
     PlayerPlaybackMode("player_playback_mode"),
+    PlayerSettingsApplyToGlobal("player_settings_apply_to_global"),
     PlayerStyle("player_style"),
     SubtitlePreferredLang("subtitle_preferred_lang"),
     SubtitleTextSizeSp("subtitle_text_size_sp"),

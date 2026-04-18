@@ -1297,6 +1297,11 @@ class SettingsInteractionHandler(
                 }
             }
 
+            SettingId.PlayerSettingsApplyToGlobal -> {
+                prefs.playerSettingsApplyToGlobal = !prefs.playerSettingsApplyToGlobal
+                renderer.refreshSection(entry.id)
+            }
+
             SettingId.SubtitlePreferredLang -> {
                 val options =
                     listOf(

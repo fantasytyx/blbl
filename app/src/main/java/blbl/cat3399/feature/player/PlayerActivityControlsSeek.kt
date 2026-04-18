@@ -191,7 +191,7 @@ internal fun PlayerActivity.scheduleHideSeekOsd() {
 }
 
 internal fun PlayerActivity.updatePersistentBottomProgressBarVisibility() {
-    val enabled = BiliClient.prefs.playerPersistentBottomProgressEnabled
+    val enabled = session.persistentBottomProgressEnabled
     val showControls = osdMode != PlayerActivity.OsdMode.Hidden || isSidePanelVisible()
     val persistentV = if (enabled && !showControls && !transientSeekOsdVisible) View.VISIBLE else View.GONE
     if (binding.progressPersistentBottom.visibility != persistentV) binding.progressPersistentBottom.visibility = persistentV

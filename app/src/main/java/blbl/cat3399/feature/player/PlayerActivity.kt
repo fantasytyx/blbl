@@ -220,6 +220,7 @@ class PlayerActivity : BaseActivity() {
 
     internal var currentBvid: String = ""
     internal var currentCid: Long = -1L
+    internal var currentVideoIsPortrait: Boolean? = null
     internal var currentEpId: Long? = null
     internal var currentAid: Long? = null
     internal var currentSeasonId: Long? = null
@@ -686,7 +687,6 @@ class PlayerActivity : BaseActivity() {
         binding.topBar.visibility = View.GONE
         binding.bottomBar.visibility = View.GONE
         binding.progressPersistentBottom.max = SEEK_MAX
-        updatePersistentBottomProgressBarVisibility()
         resetBufferingOverlayState()
         binding.tvSeekHint.visibility = View.GONE
         binding.btnBack.setOnClickListener { finish() }
@@ -788,6 +788,8 @@ class PlayerActivity : BaseActivity() {
             subtitleTextSizeSp = prefs.subtitleTextSizeSp,
             subtitleBottomPaddingFraction = prefs.subtitleBottomPaddingFraction,
             subtitleBackgroundOpacity = prefs.subtitleBackgroundOpacity,
+            audioBalanceLevel = AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel),
+            persistentBottomProgressEnabled = prefs.playerPersistentBottomProgressEnabled,
             danmaku = DanmakuSessionSettings(
                 enabled = prefs.danmakuEnabled,
                 opacity = prefs.danmakuOpacity,
@@ -824,6 +826,7 @@ class PlayerActivity : BaseActivity() {
         if (session.engineKind != engineKind) {
             session = session.copy(engineKind = engineKind)
         }
+        updatePersistentBottomProgressBarVisibility()
         val engine: BlblPlayerEngine =
             when (engineKind) {
                 PlayerEngineKind.IjkPlayer -> {
@@ -832,7 +835,7 @@ class PlayerActivity : BaseActivity() {
                 PlayerEngineKind.ExoPlayer -> {
                     ExoPlayerEngine(
                         context = this,
-                        audioBalanceLevel = AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel),
+                        audioBalanceLevel = session.audioBalanceLevel,
                         onTransferHost = { kind, host ->
                             when (kind) {
                                 DebugStreamKind.VIDEO -> debug.videoTransferHost = host
@@ -2414,14 +2417,7 @@ class PlayerActivity : BaseActivity() {
     }
 
     internal fun setDanmakuEnabled(enabled: Boolean) {
-        if (session.danmaku.enabled == enabled) return
-        session = session.copy(danmaku = session.danmaku.copy(enabled = enabled))
-        binding.danmakuView.invalidate()
-        updateDanmakuButton()
-        if (enabled) {
-            val positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
-            requestDanmakuSegmentsForPosition(positionMs, immediate = true)
-        }
+        applyDanmakuEnabledSetting(enabled)
     }
 
     internal fun updateSubtitleButton() {
@@ -2460,9 +2456,7 @@ class PlayerActivity : BaseActivity() {
             AppToast.show(this, "该视频暂无字幕")
             return
         }
-        session = session.copy(subtitleEnabled = !session.subtitleEnabled)
-        applySubtitleEnabled(exo)
-        updateSubtitleButton()
+        applySubtitleEnabledSetting(!session.subtitleEnabled, exo)
     }
 
     internal fun applySubtitleEnabled(exo: ExoPlayer) {

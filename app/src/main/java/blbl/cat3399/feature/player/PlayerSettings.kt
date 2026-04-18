@@ -10,6 +10,7 @@ import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.SubtitleView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.prefs.PlayerPlaybackModes
@@ -76,6 +77,227 @@ private fun settingItem(
 
 private fun Boolean.switchText(): String = if (this) "开" else "关"
 
+private fun PlayerActivity.shouldPersistPlayerSettingsToGlobal(): Boolean = BiliClient.prefs.playerSettingsApplyToGlobal
+
+internal fun <T> PlayerActivity.applySessionSettingValue(
+    value: T,
+    updateSession: PlayerSessionSettings.(T) -> PlayerSessionSettings,
+    syncToGlobal: AppPrefs.(T) -> Unit = {},
+    afterApplied: PlayerActivity.(T) -> Unit = {},
+    refreshSettingsPanel: Boolean = true,
+) {
+    session = session.updateSession(value)
+    if (shouldPersistPlayerSettingsToGlobal()) {
+        BiliClient.prefs.syncToGlobal(value)
+    }
+    afterApplied(value)
+    if (refreshSettingsPanel) {
+        refreshSettingsPanel()
+    }
+}
+
+internal fun <T> PlayerActivity.applyDanmakuSettingValue(
+    value: T,
+    updateDanmaku: DanmakuSessionSettings.(T) -> DanmakuSessionSettings,
+    syncToGlobal: AppPrefs.(T) -> Unit = {},
+    afterApplied: PlayerActivity.(T) -> Unit = {},
+    refreshSettingsPanel: Boolean = true,
+) {
+    applySessionSettingValue(
+        value = value,
+        updateSession = { nextValue -> copy(danmaku = danmaku.updateDanmaku(nextValue)) },
+        syncToGlobal = syncToGlobal,
+        afterApplied = afterApplied,
+        refreshSettingsPanel = refreshSettingsPanel,
+    )
+}
+
+internal fun PlayerActivity.toggleSessionSettingFlag(
+    current: Boolean,
+    updateSession: PlayerSessionSettings.(Boolean) -> PlayerSessionSettings,
+    syncToGlobal: AppPrefs.(Boolean) -> Unit = {},
+    afterApplied: PlayerActivity.(Boolean) -> Unit = {},
+    refreshSettingsPanel: Boolean = true,
+) {
+    applySessionSettingValue(
+        value = !current,
+        updateSession = updateSession,
+        syncToGlobal = syncToGlobal,
+        afterApplied = afterApplied,
+        refreshSettingsPanel = refreshSettingsPanel,
+    )
+}
+
+internal fun PlayerActivity.toggleDanmakuReloadSettingFlag(
+    current: Boolean,
+    updateDanmaku: DanmakuSessionSettings.(Boolean) -> DanmakuSessionSettings,
+    syncToGlobal: AppPrefs.(Boolean) -> Unit = {},
+) {
+    applyDanmakuSettingValue(
+        value = !current,
+        updateDanmaku = updateDanmaku,
+        syncToGlobal = syncToGlobal,
+        afterApplied = { reloadDanmakuForCurrentSession() },
+    )
+}
+
+private fun PlayerActivity.persistResolutionPreference(prefs: AppPrefs, qn: Int) {
+    when (currentVideoIsPortrait) {
+        true -> prefs.playerPreferredQnPortrait = qn
+        false -> prefs.playerPreferredQn = qn
+        null -> Unit
+    }
+}
+
+internal fun PlayerActivity.defaultSubtitleLangCode(): String {
+    return BiliClient.prefs.subtitlePreferredLang
+        .trim()
+        .ifBlank { "auto" }
+}
+
+internal fun PlayerActivity.selectedResolutionQn(): Int {
+    return session.actualQn.takeIf { it > 0 }
+        ?: session.targetQn.takeIf { it > 0 }
+        ?: session.preferredQn
+}
+
+internal fun PlayerActivity.selectedAudioTrackId(): Int {
+    return session.actualAudioId.takeIf { it > 0 }
+        ?: session.targetAudioId.takeIf { it > 0 }
+        ?: session.preferAudioId
+}
+
+internal fun PlayerActivity.resolvedSubtitleLangCode(): String {
+    return (session.subtitleLangOverride ?: defaultSubtitleLangCode())
+        .trim()
+        .ifBlank { "auto" }
+}
+
+internal fun PlayerActivity.applyResolutionSetting(qn: Int) {
+    session =
+        if (shouldPersistPlayerSettingsToGlobal() && currentVideoIsPortrait != null) {
+            session.copy(preferredQn = qn, targetQn = 0)
+        } else if (qn == session.preferredQn) {
+            session.copy(targetQn = 0)
+        } else {
+            session.copy(targetQn = qn)
+        }
+    if (shouldPersistPlayerSettingsToGlobal()) {
+        persistResolutionPreference(BiliClient.prefs, qn)
+    }
+    reloadStream(keepPosition = true)
+    refreshSettingsPanel()
+}
+
+internal fun PlayerActivity.applyAudioTrackSetting(id: Int) {
+    session =
+        if (shouldPersistPlayerSettingsToGlobal()) {
+            session.copy(preferAudioId = id, targetAudioId = 0)
+        } else if (id == session.preferAudioId) {
+            session.copy(targetAudioId = 0)
+        } else {
+            session.copy(targetAudioId = id)
+        }
+    if (shouldPersistPlayerSettingsToGlobal()) {
+        BiliClient.prefs.playerPreferredAudioId = id
+    }
+    reloadStream(keepPosition = true)
+    refreshSettingsPanel()
+}
+
+internal fun PlayerActivity.applyPlaybackModeSetting(
+    pickedCode: String,
+    engine: BlblPlayerEngine,
+) {
+    val normalized = PlayerPlaybackModes.normalize(pickedCode)
+    val defaultCode =
+        if (shouldPersistPlayerSettingsToGlobal() && !isPgcLikePlayback()) {
+            normalized
+        } else {
+            defaultPlaybackModeCode()
+        }
+    session =
+        if (normalized == defaultCode) {
+            session.copy(playbackModeOverride = null)
+        } else {
+            session.copy(playbackModeOverride = normalized)
+        }
+    if (shouldPersistPlayerSettingsToGlobal()) {
+        BiliClient.prefs.playerPlaybackMode = normalized
+    }
+    applyPlaybackMode(engine)
+    updatePlaylistControls()
+    refreshSettingsPanel()
+}
+
+private fun PlayerActivity.applyPlayerEngineSetting(picked: PlayerEngineKind) {
+    applySessionSettingValue(
+        value = picked,
+        updateSession = { copy(engineKind = it) },
+        syncToGlobal = { playerEngineKind = it.prefValue },
+        afterApplied = { restartForEngineSwitch(it) },
+        refreshSettingsPanel = false,
+    )
+}
+
+internal fun PlayerActivity.applySubtitleEnabledSetting(
+    enabled: Boolean,
+    exo: ExoPlayer,
+) {
+    applySessionSettingValue(
+        value = enabled,
+        updateSession = { copy(subtitleEnabled = it) },
+        syncToGlobal = { subtitleEnabledDefault = it },
+        afterApplied = {
+            applySubtitleEnabled(exo)
+            updateSubtitleButton()
+        },
+    )
+}
+
+internal fun PlayerActivity.applySubtitleLanguageSetting(
+    pickedCode: String,
+    exo: ExoPlayer,
+) {
+    val normalized = pickedCode.trim().ifBlank { "auto" }
+    val defaultCode = defaultSubtitleLangCode()
+    session =
+        if (shouldPersistPlayerSettingsToGlobal() || normalized.equals(defaultCode, ignoreCase = true)) {
+            session.copy(subtitleLangOverride = null)
+        } else {
+            session.copy(subtitleLangOverride = normalized)
+        }
+    if (shouldPersistPlayerSettingsToGlobal()) {
+        BiliClient.prefs.subtitlePreferredLang = normalized
+    }
+    refreshSettingsPanel()
+    lifecycleScope.launch {
+        subtitleConfig = buildSubtitleConfigFromCurrentSelection(bvid = currentBvid, cid = currentCid)
+        subtitleAvailabilityKnown = true
+        subtitleAvailable = subtitleConfig != null
+        applySubtitleEnabled(exo)
+        updateSubtitleButton()
+        refreshSettingsPanel()
+        reloadStream(keepPosition = true)
+    }
+}
+
+internal fun PlayerActivity.applyDanmakuEnabledSetting(enabled: Boolean) {
+    applyDanmakuSettingValue(
+        value = enabled,
+        updateDanmaku = { copy(enabled = it) },
+        syncToGlobal = { danmakuEnabled = it },
+        afterApplied = { nextEnabled ->
+            binding.danmakuView.invalidate()
+            updateDanmakuButton()
+            if (nextEnabled) {
+                val positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+                requestDanmakuSegmentsForPosition(positionMs, immediate = true)
+            }
+        },
+    )
+}
+
 internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.SettingItem) {
     when (item.key) {
         PlayerSettingKeys.PLAYER_ENGINE -> showPlayerEngineDialog()
@@ -93,7 +315,6 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
                 return
             }
             toggleSubtitles(exo)
-            refreshSettingsPanel()
         }
 
         PlayerSettingKeys.SUBTITLE_LANG -> showSubtitleLangDialog()
@@ -101,10 +322,7 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
         PlayerSettingKeys.SUBTITLE_BOTTOM_PADDING -> showSubtitleBottomPaddingDialog()
         PlayerSettingKeys.SUBTITLE_BACKGROUND_OPACITY -> showSubtitleBackgroundOpacityDialog()
         PlayerSettingKeys.DANMAKU_MENU -> showDanmakuSettingsMenu()
-        PlayerSettingKeys.DANMAKU_ENABLED -> {
-            setDanmakuEnabled(!session.danmaku.enabled)
-            refreshSettingsPanel()
-        }
+        PlayerSettingKeys.DANMAKU_ENABLED -> setDanmakuEnabled(!session.danmaku.enabled)
 
         PlayerSettingKeys.DANMAKU_SPEED -> showDanmakuSpeedDialog()
         PlayerSettingKeys.DANMAKU_OPACITY -> showDanmakuOpacityDialog()
@@ -113,27 +331,63 @@ internal fun PlayerActivity.handleSettingsItemClick(item: PlayerSettingsAdapter.
         PlayerSettingKeys.DANMAKU_STROKE_WIDTH -> showDanmakuStrokeWidthDialog()
         PlayerSettingKeys.DANMAKU_FONT_WEIGHT -> showDanmakuFontWeightDialog()
         PlayerSettingKeys.DANMAKU_LANE_DENSITY -> showDanmakuLaneDensityDialog()
-        PlayerSettingKeys.DANMAKU_FOLLOW_BILI_SHIELD -> toggleDanmakuFlag { copy(followBiliShield = !followBiliShield) }
-        PlayerSettingKeys.DANMAKU_AI_SHIELD_ENABLED -> toggleDanmakuFlag { copy(aiShieldEnabled = !aiShieldEnabled) }
+        PlayerSettingKeys.DANMAKU_FOLLOW_BILI_SHIELD ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.followBiliShield,
+                updateDanmaku = { copy(followBiliShield = it) },
+                syncToGlobal = { danmakuFollowBiliShield = it },
+            )
+        PlayerSettingKeys.DANMAKU_AI_SHIELD_ENABLED ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.aiShieldEnabled,
+                updateDanmaku = { copy(aiShieldEnabled = it) },
+                syncToGlobal = { danmakuAiShieldEnabled = it },
+            )
         PlayerSettingKeys.DANMAKU_AI_SHIELD_LEVEL -> showDanmakuAiShieldLevelDialog()
-        PlayerSettingKeys.DANMAKU_ALLOW_SCROLL -> toggleDanmakuFlag { copy(allowScroll = !allowScroll) }
-        PlayerSettingKeys.DANMAKU_ALLOW_TOP -> toggleDanmakuFlag { copy(allowTop = !allowTop) }
-        PlayerSettingKeys.DANMAKU_ALLOW_BOTTOM -> toggleDanmakuFlag { copy(allowBottom = !allowBottom) }
-        PlayerSettingKeys.DANMAKU_ALLOW_COLOR -> toggleDanmakuFlag { copy(allowColor = !allowColor) }
-        PlayerSettingKeys.DANMAKU_ALLOW_SPECIAL -> toggleDanmakuFlag { copy(allowSpecial = !allowSpecial) }
-
-        PlayerSettingKeys.DEBUG_INFO -> {
-            session = session.copy(debugEnabled = !session.debugEnabled)
-            updateDebugOverlay()
-            refreshSettingsPanel()
-        }
-
-        PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS -> {
-            val appPrefs = BiliClient.prefs
-            appPrefs.playerPersistentBottomProgressEnabled = !appPrefs.playerPersistentBottomProgressEnabled
-            updatePersistentBottomProgressBarVisibility()
-            refreshSettingsPanel()
-        }
+        PlayerSettingKeys.DANMAKU_ALLOW_SCROLL ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.allowScroll,
+                updateDanmaku = { copy(allowScroll = it) },
+                syncToGlobal = { danmakuAllowScroll = it },
+            )
+        PlayerSettingKeys.DANMAKU_ALLOW_TOP ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.allowTop,
+                updateDanmaku = { copy(allowTop = it) },
+                syncToGlobal = { danmakuAllowTop = it },
+            )
+        PlayerSettingKeys.DANMAKU_ALLOW_BOTTOM ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.allowBottom,
+                updateDanmaku = { copy(allowBottom = it) },
+                syncToGlobal = { danmakuAllowBottom = it },
+            )
+        PlayerSettingKeys.DANMAKU_ALLOW_COLOR ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.allowColor,
+                updateDanmaku = { copy(allowColor = it) },
+                syncToGlobal = { danmakuAllowColor = it },
+            )
+        PlayerSettingKeys.DANMAKU_ALLOW_SPECIAL ->
+            toggleDanmakuReloadSettingFlag(
+                current = session.danmaku.allowSpecial,
+                updateDanmaku = { copy(allowSpecial = it) },
+                syncToGlobal = { danmakuAllowSpecial = it },
+            )
+        PlayerSettingKeys.DEBUG_INFO ->
+            toggleSessionSettingFlag(
+                current = session.debugEnabled,
+                updateSession = { copy(debugEnabled = it) },
+                syncToGlobal = { playerDebugEnabled = it },
+                afterApplied = { updateDebugOverlay() },
+            )
+        PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS ->
+            toggleSessionSettingFlag(
+                current = session.persistentBottomProgressEnabled,
+                updateSession = { copy(persistentBottomProgressEnabled = it) },
+                syncToGlobal = { playerPersistentBottomProgressEnabled = it },
+                afterApplied = { updatePersistentBottomProgressBarVisibility() },
+            )
 
         else -> AppToast.show(this, "暂未实现：${item.title}")
     }
@@ -178,7 +432,6 @@ internal fun PlayerActivity.refreshSettings(
     adapter: PlayerSettingsAdapter,
     preferredFocusKey: String? = null,
 ) {
-    val prefs = BiliClient.prefs
     val subtitleSupported = player?.capabilities?.subtitlesSupported == true
     val menu =
         when (settingsPanelMenu) {
@@ -197,7 +450,7 @@ internal fun PlayerActivity.refreshSettings(
     val restoreFocusKey = preferredFocusKey ?: currentSettingsFocusKey()
     val items =
         when (menu) {
-            PlayerSettingsMenu.ROOT -> buildRootSettingsItems(prefs = prefs, subtitleSupported = subtitleSupported)
+            PlayerSettingsMenu.ROOT -> buildRootSettingsItems(subtitleSupported = subtitleSupported)
             PlayerSettingsMenu.SUBTITLE -> buildSubtitleSettingsItems()
             PlayerSettingsMenu.DANMAKU -> buildDanmakuSettingsItems()
         }
@@ -215,7 +468,6 @@ internal fun PlayerActivity.refreshSettings(
 }
 
 private fun PlayerActivity.buildRootSettingsItems(
-    prefs: AppPrefs,
     subtitleSupported: Boolean,
 ): List<PlayerSettingsAdapter.SettingItem> {
     return listOfNotNull(
@@ -226,11 +478,11 @@ private fun PlayerActivity.buildRootSettingsItems(
         settingItem(PlayerSettingKeys.PLAYBACK_MODE, "播放模式", playbackModeSubtitle()),
         subtitleSupported.takeIf { it }?.let { settingItem(PlayerSettingKeys.SUBTITLE_MENU, "字幕设置", ">") },
         settingItem(PlayerSettingKeys.DANMAKU_MENU, "弹幕设置", ">"),
-        settingItem(PlayerSettingKeys.AUDIO_BALANCE, "音频平衡", AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel).label),
+        settingItem(PlayerSettingKeys.AUDIO_BALANCE, "音频平衡", session.audioBalanceLevel.label),
         settingItem(
             PlayerSettingKeys.PERSISTENT_BOTTOM_PROGRESS,
             "底部常驻进度条",
-            prefs.playerPersistentBottomProgressEnabled.switchText(),
+            session.persistentBottomProgressEnabled.switchText(),
         ),
         settingItem(PlayerSettingKeys.PLAYER_ENGINE, "播放器内核", playerEngineSubtitle()),
         settingItem(PlayerSettingKeys.DEBUG_INFO, "调试信息", session.debugEnabled.switchText()),
@@ -323,10 +575,10 @@ internal fun PlayerActivity.showPlayerEngineDialog() {
         if (picked == currentKind) return@showSettingsSingleChoiceDialog
         if (picked == PlayerEngineKind.IjkPlayer) {
             IjkPlayerPluginUi.ensureInstalled(this) {
-                restartForEngineSwitch(picked)
+                applyPlayerEngineSetting(picked)
             }
         } else {
-            restartForEngineSwitch(picked)
+            applyPlayerEngineSetting(picked)
         }
     }
 }
@@ -405,51 +657,12 @@ private fun PlayerActivity.refreshSettingsPanel() {
     (binding.recyclerSettings.adapter as? PlayerSettingsAdapter)?.let { refreshSettings(it) }
 }
 
-private inline fun PlayerActivity.updateSubtitleSettings(
-    transform: (PlayerSessionSettings) -> PlayerSessionSettings,
-    apply: PlayerActivity.() -> Unit = {},
-) {
-    session = transform(session)
-    apply()
-    refreshSettingsPanel()
-}
-
-private inline fun PlayerActivity.updateDanmakuSettings(
-    reloadDanmaku: Boolean = false,
-    transform: (DanmakuSessionSettings) -> DanmakuSessionSettings,
-) {
-    session = session.copy(danmaku = transform(session.danmaku))
-    refreshSettingsPanel()
-    if (reloadDanmaku) reloadDanmakuForCurrentSession()
-}
-
-private inline fun PlayerActivity.toggleDanmakuFlag(
-    transform: DanmakuSessionSettings.() -> DanmakuSessionSettings,
-) {
-    updateDanmakuSettings(reloadDanmaku = true) { it.transform() }
-}
-
-private inline fun PlayerActivity.updateDanmakuAppearance(
-    transform: DanmakuSessionSettings.() -> DanmakuSessionSettings,
-) {
-    session = session.copy(danmaku = session.danmaku.transform())
-    refreshDanmakuAppearance()
-}
-
-private fun PlayerActivity.refreshDanmakuAppearance() {
-    binding.danmakuView.invalidate()
-    refreshSettingsPanel()
-}
-
 internal fun PlayerActivity.showResolutionDialog() {
     // Follow docs: qn list for resolution/framerate.
     // Keep the full list so user can force-pick even if the server later falls back.
     val docQns = PlaybackSettingChoices.resolutionQns
     val available = lastAvailableQns.toSet()
-    val currentQn =
-        session.actualQn.takeIf { it > 0 }
-            ?: session.targetQn.takeIf { it > 0 }
-            ?: session.preferredQn
+    val currentQn = selectedResolutionQn()
     val currentIndex = docQns.indexOfFirst { it == currentQn }.takeIf { it >= 0 } ?: 0
     showSettingsChoiceDialog(
         title = "分辨率",
@@ -459,25 +672,13 @@ internal fun PlayerActivity.showResolutionDialog() {
             val text = qnLabel(qn)
             if (available.contains(qn)) "${text}（可用）" else text
         },
-    ) { qn ->
-        session =
-            if (qn == session.preferredQn) {
-                session.copy(targetQn = 0)
-            } else {
-                session.copy(targetQn = qn)
-            }
-        refreshSettingsPanel()
-        reloadStream(keepPosition = true)
-    }
+    ) { qn -> applyResolutionSetting(qn) }
 }
 
 internal fun PlayerActivity.showAudioDialog() {
     val docIds = PlaybackSettingChoices.audioTrackIds
     val available = lastAvailableAudioIds.toSet()
-    val currentId =
-        session.actualAudioId.takeIf { it > 0 }
-            ?: session.targetAudioId.takeIf { it > 0 }
-            ?: session.preferAudioId
+    val currentId = selectedAudioTrackId()
     val currentIndex = docIds.indexOfFirst { it == currentId }.takeIf { it >= 0 } ?: 0
 
     showSettingsChoiceDialog(
@@ -488,16 +689,7 @@ internal fun PlayerActivity.showAudioDialog() {
             val text = audioLabel(id)
             if (available.contains(id)) "${text}（可用）" else text
         },
-    ) { id ->
-        session =
-            if (id == session.preferAudioId) {
-                session.copy(targetAudioId = 0)
-            } else {
-                session.copy(targetAudioId = id)
-            }
-        refreshSettingsPanel()
-        reloadStream(keepPosition = true)
-    }
+    ) { id -> applyAudioTrackSetting(id) }
 }
 
 internal fun PlayerActivity.showCodecDialog() {
@@ -508,9 +700,12 @@ internal fun PlayerActivity.showCodecDialog() {
         options = options.toList(),
         checkedIndex = current,
     ) { selected ->
-        session = session.copy(preferCodec = selected)
-        refreshSettingsPanel()
-        reloadStream(keepPosition = true)
+        applySessionSettingValue(
+            value = selected,
+            updateSession = { copy(preferCodec = it) },
+            syncToGlobal = { playerPreferredCodec = it },
+            afterApplied = { reloadStream(keepPosition = true) },
+        )
     }
 }
 
@@ -523,16 +718,18 @@ internal fun PlayerActivity.showSpeedDialog() {
         checkedIndex = current,
         label = { String.format(Locale.US, "%.2fx", it) },
     ) { v ->
-        session = session.copy(playbackSpeed = v)
-        player?.setPlaybackSpeed(v)
-        refreshSettingsPanel()
+        applySessionSettingValue(
+            value = v.coerceIn(0.25f, 4.0f),
+            updateSession = { copy(playbackSpeed = it) },
+            syncToGlobal = { playerSpeed = it },
+            afterApplied = { player?.setPlaybackSpeed(it) },
+        )
     }
 }
 
 internal fun PlayerActivity.showAudioBalanceDialog() {
-    val prefs = BiliClient.prefs
     val options = AudioBalanceLevel.ordered
-    val current = AudioBalanceLevel.fromPrefValue(prefs.playerAudioBalanceLevel)
+    val current = session.audioBalanceLevel
     val checked = options.indexOf(current).takeIf { it >= 0 } ?: 0
 
     showSettingsChoiceDialog(
@@ -541,15 +738,20 @@ internal fun PlayerActivity.showAudioBalanceDialog() {
         checkedIndex = checked,
         label = AudioBalanceLevel::label,
     ) { picked ->
-        prefs.playerAudioBalanceLevel = picked.prefValue
-        val engine = player
-        if (engine is ExoPlayerEngine) {
-            engine.setAudioBalanceLevel(picked)
-            AppToast.show(this, "音频平衡：${picked.label}")
-        } else {
-            AppToast.show(this, "当前播放器内核不支持音频平衡")
-        }
-        refreshSettingsPanel()
+        applySessionSettingValue(
+            value = picked,
+            updateSession = { copy(audioBalanceLevel = it) },
+            syncToGlobal = { playerAudioBalanceLevel = it.prefValue },
+            afterApplied = { nextLevel ->
+                val engine = player
+                if (engine is ExoPlayerEngine) {
+                    engine.setAudioBalanceLevel(nextLevel)
+                    AppToast.show(this, "音频平衡：${nextLevel.label}")
+                } else {
+                    AppToast.show(this, "当前播放器内核不支持音频平衡")
+                }
+            },
+        )
     }
 }
 
@@ -602,33 +804,19 @@ internal fun PlayerActivity.showPlaybackModeDialog() {
         options = modeCodes,
         checkedIndex = checked,
         label = PlayerPlaybackModes::label,
-    ) { pickedCode ->
-        val defaultCode = defaultPlaybackModeCode()
-        session =
-            if (pickedCode == defaultCode) {
-                session.copy(playbackModeOverride = null)
-            } else {
-                session.copy(playbackModeOverride = pickedCode)
-        }
-        applyPlaybackMode(engine)
-        updatePlaylistControls()
-        refreshSettingsPanel()
-    }
+    ) { pickedCode -> applyPlaybackModeSetting(pickedCode, engine) }
 }
 
 internal fun PlayerActivity.pickSubtitleItem(items: List<SubtitleItem>): SubtitleItem? {
     if (items.isEmpty()) return null
-    val prefs = BiliClient.prefs
-    val preferred = session.subtitleLangOverride ?: prefs.subtitlePreferredLang
+    val preferred = resolvedSubtitleLangCode()
     if (preferred == "auto" || preferred.isBlank()) return items.first()
     return items.firstOrNull { it.lan.equals(preferred, ignoreCase = true) } ?: items.first()
 }
 
 internal fun PlayerActivity.subtitleLangSubtitle(): String {
     if (subtitleItems.isEmpty()) return "无/未加载"
-    val prefs = BiliClient.prefs
-    val preferred = session.subtitleLangOverride ?: prefs.subtitlePreferredLang
-    return resolveSubtitleLang(preferred)
+    return resolveSubtitleLang(resolvedSubtitleLangCode())
 }
 
 internal fun PlayerActivity.resolveSubtitleLang(code: String): String {
@@ -652,32 +840,20 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
         return
     }
     val autoLabel = "自动（取第一个）"
-    val prefs = BiliClient.prefs
     val items =
         buildList {
             add(autoLabel)
             subtitleItems.forEach { add(it.lanDoc) }
         }
-    val effective = (session.subtitleLangOverride ?: prefs.subtitlePreferredLang).trim()
+    val effective = resolvedSubtitleLangCode()
     val currentLabel =
         when {
             effective.equals("auto", ignoreCase = true) || effective.isBlank() -> autoLabel
             else -> subtitleItems.firstOrNull { it.lan.equals(effective, ignoreCase = true) }?.lanDoc ?: subtitleItems.first().lanDoc
         }
     val checked = items.indexOf(currentLabel).coerceAtLeast(0)
-    val applyAndReload = {
-        lifecycleScope.launch {
-            subtitleConfig = buildSubtitleConfigFromCurrentSelection(bvid = currentBvid, cid = currentCid)
-            subtitleAvailabilityKnown = true
-            subtitleAvailable = subtitleConfig != null
-            applySubtitleEnabled(exo)
-            refreshSettings(binding.recyclerSettings.adapter as PlayerSettingsAdapter)
-            updateSubtitleButton()
-            reloadStream(keepPosition = true)
-        }
-    }
     showSettingsSingleChoiceDialog(
-        title = "字幕语言（本次播放）",
+        title = "字幕语言",
         items = items,
         checkedIndex = checked,
     ) { which, _ ->
@@ -687,17 +863,7 @@ internal fun PlayerActivity.showSubtitleLangDialog() {
                 chosen.startsWith("自动") -> "auto"
                 else -> subtitleItems.firstOrNull { it.lanDoc == chosen }?.lan ?: subtitleItems.first().lan
             }
-        val defaultCode =
-            prefs.subtitlePreferredLang
-                .trim()
-                .ifBlank { "auto" }
-        session =
-            if (pickedCode.equals(defaultCode, ignoreCase = true)) {
-                session.copy(subtitleLangOverride = null)
-            } else {
-                session.copy(subtitleLangOverride = pickedCode)
-            }
-        applyAndReload()
+        applySubtitleLanguageSetting(pickedCode, exo)
     }
 }
 
@@ -712,9 +878,11 @@ internal fun PlayerActivity.showSubtitleTextSizeDialog() {
         options = options,
         checkedIndex = current,
     ) { picked ->
-        updateSubtitleSettings(
-            transform = { it.copy(subtitleTextSizeSp = picked.toFloat()) },
-            apply = { applySubtitleTextSize() },
+        applySessionSettingValue(
+            value = picked.toFloat().coerceIn(10f, 60f),
+            updateSession = { copy(subtitleTextSizeSp = it) },
+            syncToGlobal = { subtitleTextSizeSp = it },
+            afterApplied = { applySubtitleTextSize() },
         )
     }
 }
@@ -731,9 +899,11 @@ internal fun PlayerActivity.showSubtitleBottomPaddingDialog() {
         checkedIndex = current,
         label = { "${it}%" },
     ) { percent ->
-        updateSubtitleSettings(
-            transform = { it.copy(subtitleBottomPaddingFraction = (percent / 100f).coerceIn(0f, 0.30f)) },
-            apply = { applySubtitleStyle() },
+        applySessionSettingValue(
+            value = (percent / 100f).coerceIn(0f, 0.30f),
+            updateSession = { copy(subtitleBottomPaddingFraction = it) },
+            syncToGlobal = { subtitleBottomPaddingFraction = it },
+            afterApplied = { applySubtitleStyle() },
         )
     }
 }
@@ -747,9 +917,11 @@ internal fun PlayerActivity.showSubtitleBackgroundOpacityDialog() {
         checkedIndex = current,
         label = { String.format(Locale.US, "%.2f", it) },
     ) { picked ->
-        updateSubtitleSettings(
-            transform = { it.copy(subtitleBackgroundOpacity = picked.coerceIn(0f, 1.0f)) },
-            apply = { applySubtitleStyle() },
+        applySessionSettingValue(
+            value = picked.coerceIn(0f, 1.0f),
+            updateSession = { copy(subtitleBackgroundOpacity = it) },
+            syncToGlobal = { subtitleBackgroundOpacity = it },
+            afterApplied = { applySubtitleStyle() },
         )
     }
 }
@@ -838,7 +1010,12 @@ internal fun PlayerActivity.showDanmakuOpacityDialog() {
         checkedIndex = current,
         label = { String.format(Locale.US, "%.2f", it) },
     ) { picked ->
-        updateDanmakuAppearance { copy(opacity = picked) }
+        applyDanmakuSettingValue(
+            value = picked.coerceIn(0.05f, 1.0f),
+            updateDanmaku = { copy(opacity = it) },
+            syncToGlobal = { danmakuOpacity = it },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -853,7 +1030,12 @@ internal fun PlayerActivity.showDanmakuTextSizeDialog() {
         options = options,
         checkedIndex = current,
     ) { picked ->
-        updateDanmakuAppearance { copy(textSizeSp = picked.toFloat()) }
+        applyDanmakuSettingValue(
+            value = picked.toFloat().coerceIn(10f, 60f),
+            updateDanmaku = { copy(textSizeSp = it) },
+            syncToGlobal = { danmakuTextSizeSp = it },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -865,7 +1047,12 @@ internal fun PlayerActivity.showDanmakuSpeedDialog() {
         options = options,
         checkedIndex = current,
     ) { picked ->
-        updateDanmakuAppearance { copy(speedLevel = picked) }
+        applyDanmakuSettingValue(
+            value = picked.coerceIn(1, 10),
+            updateDanmaku = { copy(speedLevel = it) },
+            syncToGlobal = { danmakuSpeed = it },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -880,7 +1067,12 @@ internal fun PlayerActivity.showDanmakuAreaDialog() {
         checkedIndex = current,
         label = { it.second },
     ) { picked ->
-        updateDanmakuAppearance { copy(area = picked.first) }
+        applyDanmakuSettingValue(
+            value = picked.first.coerceIn(0.05f, 1.0f),
+            updateDanmaku = { copy(area = it) },
+            syncToGlobal = { danmakuArea = it },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -892,7 +1084,12 @@ internal fun PlayerActivity.showDanmakuStrokeWidthDialog() {
         options = options,
         checkedIndex = current.coerceAtLeast(0),
     ) { picked ->
-        updateDanmakuAppearance { copy(strokeWidthPx = picked) }
+        applyDanmakuSettingValue(
+            value = picked,
+            updateDanmaku = { copy(strokeWidthPx = it) },
+            syncToGlobal = { danmakuStrokeWidthPx = it },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -905,7 +1102,12 @@ internal fun PlayerActivity.showDanmakuFontWeightDialog() {
         checkedIndex = current,
         label = ::danmakuFontWeightText,
     ) { picked ->
-        updateDanmakuAppearance { copy(fontWeight = picked) }
+        applyDanmakuSettingValue(
+            value = picked,
+            updateDanmaku = { copy(fontWeight = it) },
+            syncToGlobal = { danmakuFontWeight = it.prefValue },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -918,7 +1120,12 @@ internal fun PlayerActivity.showDanmakuLaneDensityDialog() {
         checkedIndex = current,
         label = ::danmakuLaneDensityText,
     ) { picked ->
-        updateDanmakuAppearance { copy(laneDensity = picked) }
+        applyDanmakuSettingValue(
+            value = picked,
+            updateDanmaku = { copy(laneDensity = it) },
+            syncToGlobal = { danmakuLaneDensity = it.prefValue },
+            afterApplied = { binding.danmakuView.invalidate() },
+        )
     }
 }
 
@@ -930,8 +1137,11 @@ internal fun PlayerActivity.showDanmakuAiShieldLevelDialog() {
         options = options,
         checkedIndex = current,
     ) { picked ->
-        updateDanmakuSettings(reloadDanmaku = true) {
-            it.copy(aiShieldLevel = picked.coerceIn(1, 10))
-        }
+        applyDanmakuSettingValue(
+            value = picked.coerceIn(1, 10),
+            updateDanmaku = { copy(aiShieldLevel = it) },
+            syncToGlobal = { danmakuAiShieldLevel = it },
+            afterApplied = { reloadDanmakuForCurrentSession() },
+        )
     }
 }

@@ -243,6 +243,7 @@ internal fun PlayerActivity.startPlayback(
         seasonIdExtra?.takeIf { it > 0L }
             ?: parseBangumiSeasonIdFromSource(pageListSource)
     currentCid = -1L
+    currentVideoIsPortrait = null
 
     trace =
         PlayerActivity.PlaybackTrace(
@@ -928,6 +929,7 @@ internal fun PlayerActivity.applyPerVideoPreferredQn(viewData: JSONObject, cid: 
         }
 
     val isPortraitVideo = (effectiveW > 0 && effectiveH > 0 && effectiveH > effectiveW)
+    currentVideoIsPortrait = isPortraitVideo
     val preferredQn = if (isPortraitVideo) prefs.playerPreferredQnPortrait else prefs.playerPreferredQn
     if (session.preferredQn != preferredQn) {
         session = session.copy(preferredQn = preferredQn)
