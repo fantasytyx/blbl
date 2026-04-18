@@ -873,7 +873,7 @@ internal fun PlayerActivity.handlePlaybackEnded(engine: BlblPlayerEngine) {
             }
 
             // When any OSD/panels are visible, do NOT auto-next and do NOT show the hint.
-            // We only show "即将播放 ..." + start the 2s countdown after the UI is fully closed.
+            // We only show "即将播放 ..." and start the auto-next countdown window after the UI is fully closed.
             if (isAutoNextUiBlocked()) {
                 armAutoNextAfterEnded(reason = "ended_ui_blocked")
                 pauseAutoNextAfterEnded(reason = "ended_ui_blocked")
@@ -882,7 +882,7 @@ internal fun PlayerActivity.handlePlaybackEnded(engine: BlblPlayerEngine) {
             }
 
             // If the hint was already shown during playback, keep the old behavior: transition immediately.
-            // Otherwise, show it now and delay by 2 seconds so BACK can cancel.
+            // Otherwise, show it now and delay by the auto-next countdown window so BACK can cancel.
             if (autoNextHintVisible) {
                 val target = autoNextPending ?: resolveAutoNextTargetByPlaybackMode(preloadRecommendation = false)
                 if (target != null) {

@@ -3703,7 +3703,7 @@ class PlayerActivity : BaseActivity() {
         internal const val TOUCH_GESTURE_SEEK_MAX_FULL_WIDTH_MS = 4 * 60_000L
         internal const val TOUCH_GESTURE_MIN_BRIGHTNESS = 0.02f
         internal const val SEEK_HINT_HIDE_DELAY_MS = 900L
-        internal const val AUTO_NEXT_PREVIEW_WINDOW_MS = 2_000L
+        internal const val AUTO_NEXT_PREVIEW_WINDOW_MS = 5_000L
         internal const val AUTO_NEXT_TITLE_MAX_CHARS = 12
         internal const val SEEK_OSD_HIDE_DELAY_MS = 1_500L
         internal const val AUTO_SKIP_START_WINDOW_MS = 1_000L
