@@ -84,8 +84,8 @@ internal class IjkPlayerEngine(
             val vCache = p.videoCachedDuration.coerceAtLeast(0L)
             val aCache = p.audioCachedDuration.coerceAtLeast(0L)
             // For DASH (separate A/V), the truly playable buffered window is usually bounded by the slower track.
-            // Use a conservative estimate to avoid over-reporting bufferedPosition, which can cause "soft seek"
-            // to be chosen and later clamped back to the real buffer end.
+            // Keep this estimate conservative so diagnostics reflect the real playable window instead of an
+            // optimistic union of the two tracks.
             val cachedForwardMs =
                 when {
                     vCache > 0L && aCache > 0L -> minOf(vCache, aCache)
@@ -134,22 +134,16 @@ internal class IjkPlayerEngine(
             return
         }
 
-        val buf = bufferedPosition
-        val shouldHardSeek = pos > (buf + HARD_SEEK_BUFFER_GAP_MS)
         if (BuildConfig.DEBUG) {
+            val buf = bufferedPosition
             val vCache = p.videoCachedDuration.coerceAtLeast(0L)
             val aCache = p.audioCachedDuration.coerceAtLeast(0L)
             AppLog.i(
                 "IjkEngine",
-                "seek dash to=${pos}ms cur=${p.currentPosition.coerceAtLeast(0L)}ms buf=${buf}ms vCache=${vCache}ms aCache=${aCache}ms mode=${if (shouldHardSeek) "hard" else "soft"}",
+                "seek dash to=${pos}ms cur=${p.currentPosition.coerceAtLeast(0L)}ms buf=${buf}ms vCache=${vCache}ms aCache=${aCache}ms mode=native",
             )
         }
-        if (!shouldHardSeek) {
-            runCatching { p.seekTo(pos) }
-            return
-        }
-
-        hardSeekDashTo(pos, reason = "out_of_buffer")
+        runCatching { p.seekTo(pos) }
     }
 
     override val playbackSpeed: Float
@@ -236,10 +230,13 @@ internal class IjkPlayerEngine(
                                 val aLen = playable.audioUrl.length
                                 AppLog.i(
                                     "IjkEngine",
-                                    "dash mpd=${mpdFile.name} bytes=${mpdFile.length()} vUrlLen=$vLen aUrlLen=$aLen proxyPort=${proxy.port}",
+                                    "dash source mode=proxy mpd=${mpdFile.name} bytes=${mpdFile.length()} vUrlLen=$vLen aUrlLen=$aLen proxyPort=${proxy.port}",
                                 )
                                 if (vLen > 1024 || aLen > 1024) {
-                                    AppLog.w("IjkEngine", "DASH segment url is very long (>1024). If playback fails, consider ijkffmpeg dashdec long-url support.")
+                                    AppLog.w(
+                                        "IjkEngine",
+                                        "DASH segment url is very long (>1024). If playback fails, consider ijkffmpeg dashdec long-url support.",
+                                    )
                                 }
                             }
                             val headers = buildHttpHeaders(urlForCookie = playable.videoUrl)
@@ -265,68 +262,6 @@ internal class IjkPlayerEngine(
         } catch (t: Throwable) {
             listeners.forEach { it.onPlayerError(t) }
         }
-    }
-
-    private fun hardSeekDashTo(positionMs: Long, reason: String) {
-        val p = ijk ?: return
-        val vod = source as? PlaybackSource.Vod ?: run {
-            runCatching { p.seekTo(positionMs) }
-            return
-        }
-        val playable = vod.playable as? Playable.Dash ?: run {
-            runCatching { p.seekTo(positionMs) }
-            return
-        }
-
-        if (BuildConfig.DEBUG) {
-            AppLog.i(
-                "IjkEngine",
-                "hardSeek dash reason=$reason to=${positionMs}ms cur=${currentPosition}ms buf=${bufferedPosition}ms",
-            )
-        }
-
-        val proxy =
-            dashProxy ?: DashLocalHttpProxy(okHttpClient = BiliClient.cdnOkHttp).also { dashProxy = it }
-        val videoBaseUrl = proxy.register(kind = "v", upstreamUrl = playable.videoUrl)
-        val audioBaseUrl = proxy.register(kind = "a", upstreamUrl = playable.audioUrl)
-        val mpdFile =
-            runCatching {
-                writeDashMpd(
-                    playable,
-                    durationMs = vod.durationMs,
-                    videoBaseUrl = videoBaseUrl,
-                    audioBaseUrl = audioBaseUrl,
-                )
-            }.getOrElse { t ->
-                listeners.forEach { it.onPlayerError(t) }
-                return
-            }
-
-        pendingSeekMs = null
-        prepared = false
-        buffering = false
-        preparing = false
-        updateState(Player.STATE_IDLE)
-
-        runCatching { p.reset() }.onFailure { AppLog.w("IjkEngine", "reset for hardSeek failed", it) }
-        applyCommonOptions(p)
-        runCatching { p.setSurface(videoSurface) }
-        runCatching { p.setLooping(repeatModeInternal == Player.REPEAT_MODE_ONE) }
-        runCatching { p.setSpeed(playbackSpeedInternal) }
-
-        val headers = buildHttpHeaders(urlForCookie = playable.videoUrl)
-        applyHttpOptions(p, headers)
-        runCatching { p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "seek-at-start", positionMs) }
-
-        runCatching { p.setDataSource(mpdFile.absolutePath) }
-            .onFailure { t ->
-                listeners.forEach { it.onPlayerError(t) }
-                return
-            }
-
-        // Ensure prepare will happen.
-        prepareRequested = true
-        startPrepareIfPossible(reason = "hard_seek:$reason")
     }
 
     override fun prepare() {
@@ -606,7 +541,7 @@ internal class IjkPlayerEngine(
 
         // NOTE:
         // - Keep User-Agent in `user_agent` option (not in custom headers) to avoid duplicates.
-        // - Keep Referer in custom headers (not `referer` option) so it propagates to DASH sub-requests via dashdec.
+        // - Keep Referer in custom headers for old cores, and also set `referer` explicitly for patched dashdec.
         val headersString =
             buildString {
                 append("Referer: ").append(referer).append("\r\n")
@@ -624,6 +559,7 @@ internal class IjkPlayerEngine(
         // Prefer option-based UA so DASH sub-requests (init/m4s) can inherit it.
         runCatching { p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user_agent", headers.userAgent) }
         runCatching { p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "user-agent", headers.userAgent) }
+        runCatching { p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "referer", headers.referer) }
         headers.cookie?.let { cookie ->
             runCatching { p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "cookies", cookie) }
         }
@@ -704,8 +640,8 @@ internal class IjkPlayerEngine(
     private fun writeDashMpd(
         playable: Playable.Dash,
         durationMs: Long?,
-        videoBaseUrl: String,
-        audioBaseUrl: String,
+        videoBaseUrl: String = playable.videoUrl,
+        audioBaseUrl: String = playable.audioUrl,
     ): File {
         val mpd =
             DashMpdGenerator.buildOnDemandMpd(
@@ -759,7 +695,6 @@ internal class IjkPlayerEngine(
     ) : RuntimeException("IjkMediaPlayer error what=$what extra=$extra")
 
     private companion object {
-        private const val HARD_SEEK_BUFFER_GAP_MS: Long = 200L
         private const val MAX_BUFFERED_FORWARD_ESTIMATE_MS: Long = 5 * 60_000L
     }
 }
