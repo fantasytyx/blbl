@@ -1283,6 +1283,11 @@ class SettingsInteractionHandler(
                 renderer.refreshSection(entry.id)
             }
 
+            SettingId.PlayerUpQuickCardEnabled -> {
+                prefs.playerUpQuickCardEnabled = !prefs.playerUpQuickCardEnabled
+                renderer.refreshSection(entry.id)
+            }
+
             SettingId.SubtitlePreferredLang -> {
                 val options =
                     listOf(

@@ -120,22 +120,6 @@
     <dimen name="player_clock_margin_end">16dp</dimen>
     <dimen name="player_clock_text_size">24sp</dimen>
 
-    <dimen name="player_up_quick_margin_start">12dp</dimen>
-    <dimen name="player_up_quick_margin_top">12dp</dimen>
-    <dimen name="player_up_quick_card_padding_h">4dp</dimen>
-    <dimen name="player_up_quick_card_padding_v">4dp</dimen>
-    <dimen name="player_up_quick_card_gap">4dp</dimen>
-    <dimen name="player_up_quick_card_radius">24dp</dimen>
-    <dimen name="player_up_quick_chip_height">40dp</dimen>
-    <dimen name="player_up_quick_profile_padding_h">4dp</dimen>
-    <dimen name="player_up_quick_follow_padding_h">14dp</dimen>
-    <dimen name="player_up_quick_follow_min_width">72dp</dimen>
-    <dimen name="player_up_quick_avatar_size">28dp</dimen>
-    <dimen name="player_up_quick_name_margin_start">8dp</dimen>
-    <dimen name="player_up_quick_name_max_width">160dp</dimen>
-    <dimen name="player_up_quick_name_text_size">16sp</dimen>
-    <dimen name="player_up_quick_follow_text_size">14sp</dimen>
-
     <dimen name="player_title_meta_margin_top">4dp</dimen>
     <dimen name="player_title_meta_padding_bottom">0dp</dimen>
 
