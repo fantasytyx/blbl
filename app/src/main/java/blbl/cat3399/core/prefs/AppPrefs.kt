@@ -803,6 +803,12 @@ class AppPrefs(context: Context) {
             excludeKeys = CREDENTIAL_KEYS,
         )
 
+    fun exportDiagnosticsSnapshotJson(): JSONObject =
+        SharedPreferencesSnapshot.encode(
+            prefs = prefs,
+            excludeKeys = DIAGNOSTIC_EXCLUDED_KEYS,
+        )
+
     fun exportCredentialsSnapshotJson(): JSONObject =
         SharedPreferencesSnapshot.encode(
             prefs = prefs,
@@ -1019,6 +1025,13 @@ class AppPrefs(context: Context) {
                 KEY_GAIA_VGATE_V_VOUCHER,
                 KEY_GAIA_VGATE_V_VOUCHER_SAVED_AT_MS,
             )
+
+        private val DIAGNOSTIC_EXCLUDED_KEYS: Set<String> =
+            CREDENTIAL_KEYS +
+                setOf(
+                    KEY_BUVID_ACTIVATED_MID,
+                    KEY_SEARCH_HISTORY,
+                )
 
         // PC browser UA is used to reduce CDN 403 for media resources.
         const val DEFAULT_UA =

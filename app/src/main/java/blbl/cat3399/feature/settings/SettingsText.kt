@@ -3,6 +3,9 @@ package blbl.cat3399.feature.settings
 import android.app.ActivityManager
 import android.content.Context
 import android.content.res.Resources
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
+import android.os.Build
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.prefs.CustomPageConfig
 import blbl.cat3399.core.prefs.PlayerPlaybackModes
@@ -229,6 +232,11 @@ object SettingsText {
         return "总${formatBytes(total)} 可用${formatBytes(avail)}"
     }
 
+    fun hardDecoderSupportText(): String {
+        val support = runCatching { queryHardDecoderSupport() }.getOrNull() ?: return "-"
+        return "H264 ${markSupport(support.h264)} / H265 ${markSupport(support.h265)} / AV1 ${markSupport(support.av1)}"
+    }
+
     fun formatBytes(bytes: Long): String {
         val b = bytes.coerceAtLeast(0)
         if (b < 1024) return "${b}B"
@@ -239,6 +247,48 @@ object SettingsText {
         val gb = mb / 1024.0
         return String.format(Locale.US, "%.2fGB", gb)
     }
+
+    private fun markSupport(supported: Boolean): String = if (supported) "✓" else "✗"
+
+    private fun queryHardDecoderSupport(): HardDecoderSupport {
+        var h264 = false
+        var h265 = false
+        var av1 = false
+        for (codecInfo in MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos) {
+            if (codecInfo.isEncoder) continue
+            if (!isHardwareDecoder(codecInfo)) continue
+            for (mime in codecInfo.supportedTypes) {
+                when (mime.lowercase(Locale.US)) {
+                    "video/avc" -> h264 = true
+                    "video/hevc" -> h265 = true
+                    "video/av01", "video/av1" -> av1 = true
+                }
+            }
+            if (h264 && h265 && av1) break
+        }
+        return HardDecoderSupport(h264 = h264, h265 = h265, av1 = av1)
+    }
+
+    private fun isHardwareDecoder(codecInfo: MediaCodecInfo): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (codecInfo.isAlias) return false
+            return codecInfo.isHardwareAccelerated
+        }
+        val name = codecInfo.name.lowercase(Locale.US)
+        if (name.startsWith("omx.google.")) return false
+        if (name.startsWith("c2.android.")) return false
+        if (name.startsWith("c2.google.")) return false
+        if (name.contains(".sw.")) return false
+        if (name.contains("software")) return false
+        if (name.contains("ffmpeg")) return false
+        return true
+    }
+
+    private data class HardDecoderSupport(
+        val h264: Boolean,
+        val h265: Boolean,
+        val av1: Boolean,
+    )
 
     fun playbackModeText(code: String): String = PlayerPlaybackModes.label(code)
 
