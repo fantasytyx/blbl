@@ -9,7 +9,11 @@ import android.os.Build
 import blbl.cat3399.core.prefs.AppPrefs
 import blbl.cat3399.core.prefs.CustomPageConfig
 import blbl.cat3399.core.prefs.PlayerPlaybackModes
+import blbl.cat3399.feature.category.CategoryZones
 import blbl.cat3399.feature.custom.CustomPageTabRegistry
+import blbl.cat3399.feature.home.HomeTabs
+import blbl.cat3399.feature.live.LiveFragment
+import blbl.cat3399.feature.my.MyTabs
 import blbl.cat3399.ui.MainRootNavRegistry
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -84,6 +88,47 @@ object SettingsText {
         val labels = config.tabs.map { CustomPageTabRegistry.settingsLabelForConfig(it) }
         if (labels.size <= 2) return labels.joinToString(separator = " / ")
         return labels.take(2).joinToString(separator = " / ") + " 等${labels.size}项"
+    }
+
+    fun mainHomeVisibleTabsText(context: Context, selectedKeys: List<String>): String {
+        return visibleTabsText(
+            options = HomeTabs.all.map { it.key to context.getString(it.titleRes) },
+            selectedKeys = selectedKeys,
+        )
+    }
+
+    fun mainCategoryVisibleTabsText(selectedKeys: List<String>): String {
+        return visibleTabsText(
+            options = CategoryZones.defaultZones.map { CategoryZones.stableKeyFor(it) to it.title },
+            selectedKeys = selectedKeys,
+        )
+    }
+
+    fun mainLiveVisibleTabsText(selectedKeys: List<String>): String {
+        return visibleTabsText(
+            options = LiveFragment.LiveTabs.all.map { it.key to it.title },
+            selectedKeys = selectedKeys,
+        )
+    }
+
+    fun mainMyVisibleTabsText(context: Context, selectedKeys: List<String>): String {
+        return visibleTabsText(
+            options = MyTabs.all.map { it.key to context.getString(it.titleRes) },
+            selectedKeys = selectedKeys,
+        )
+    }
+
+    private fun visibleTabsText(options: List<Pair<String, String>>, selectedKeys: List<String>): String {
+        val selected = selectedKeys.takeIf { it.isNotEmpty() }?.toSet()
+        val labels =
+            if (selected == null) {
+                options.map { it.second }
+            } else {
+                options.filter { it.first in selected }.map { it.second }
+            }
+        if (labels.isEmpty()) return "全部"
+        if (labels.size <= 4) return labels.joinToString(separator = " / ")
+        return labels.take(3).joinToString(separator = " / ") + " 等${labels.size}项"
     }
 
     fun mainBackFocusSchemeText(prefValue: String): String =

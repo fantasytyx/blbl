@@ -75,6 +75,22 @@ class AppPrefs(context: Context) {
             }
         }
 
+    var mainHomeVisibleTabs: List<String>
+        get() = loadStringList(KEY_MAIN_HOME_VISIBLE_TABS)
+        set(value) = saveStringList(KEY_MAIN_HOME_VISIBLE_TABS, normalizeStringList(value))
+
+    var mainCategoryVisibleTabs: List<String>
+        get() = loadStringList(KEY_MAIN_CATEGORY_VISIBLE_TABS)
+        set(value) = saveStringList(KEY_MAIN_CATEGORY_VISIBLE_TABS, normalizeStringList(value))
+
+    var mainLiveVisibleTabs: List<String>
+        get() = loadStringList(KEY_MAIN_LIVE_VISIBLE_TABS)
+        set(value) = saveStringList(KEY_MAIN_LIVE_VISIBLE_TABS, normalizeStringList(value))
+
+    var mainMyVisibleTabs: List<String>
+        get() = loadStringList(KEY_MAIN_MY_VISIBLE_TABS)
+        set(value) = saveStringList(KEY_MAIN_MY_VISIBLE_TABS, normalizeStringList(value))
+
     var followingListOrder: String
         get() {
             val raw = prefs.getString(KEY_FOLLOWING_LIST_ORDER, FOLLOWING_LIST_ORDER_FOLLOW_TIME) ?: FOLLOWING_LIST_ORDER_FOLLOW_TIME
@@ -851,6 +867,18 @@ class AppPrefs(context: Context) {
         prefs.edit().putString(key, arr.toString()).apply()
     }
 
+    private fun normalizeStringList(value: List<String>): List<String> {
+        if (value.isEmpty()) return emptyList()
+        val out = ArrayList<String>(value.size)
+        val seen = HashSet<String>(value.size * 2)
+        for (raw in value) {
+            val key = raw.trim()
+            if (key.isBlank()) continue
+            if (seen.add(key)) out.add(key)
+        }
+        return out
+    }
+
     private fun migratePlayerOsdDetailButtonIfNeeded(normalized: List<String>): List<String> {
         if (prefs.getBoolean(KEY_PLAYER_OSD_BUTTONS_DETAIL_MIGRATED, false)) return normalized
         // Requirement: auto-enable the new "Detail" button even for users who previously customized OSD.
@@ -946,6 +974,10 @@ class AppPrefs(context: Context) {
         private const val KEY_THEME_PRESET = "theme_preset"
         private const val KEY_STARTUP_PAGE = "startup_page"
         private const val KEY_CUSTOM_PAGE_CONFIG = "custom_page_config"
+        private const val KEY_MAIN_HOME_VISIBLE_TABS = "main_home_visible_tabs"
+        private const val KEY_MAIN_CATEGORY_VISIBLE_TABS = "main_category_visible_tabs"
+        private const val KEY_MAIN_LIVE_VISIBLE_TABS = "main_live_visible_tabs"
+        private const val KEY_MAIN_MY_VISIBLE_TABS = "main_my_visible_tabs"
         private const val KEY_FOLLOWING_LIST_ORDER = "following_list_order"
         private const val KEY_DYNAMIC_FOLLOWING_RECENT_UPDATE_DOT_ENABLED = "dynamic_following_recent_update_dot_enabled"
         private const val KEY_IMAGE_QUALITY = "image_quality"

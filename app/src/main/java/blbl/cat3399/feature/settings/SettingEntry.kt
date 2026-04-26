@@ -32,6 +32,10 @@ enum class SettingId(
     MainBackFocusScheme("main_back_focus_scheme"),
     VideoCardLongPressAction("video_card_long_press_action"),
     FollowingListOrder("following_list_order"),
+    MainHomeVisibleTabs("main_home_visible_tabs"),
+    MainCategoryVisibleTabs("main_category_visible_tabs"),
+    MainLiveVisibleTabs("main_live_visible_tabs"),
+    MainMyVisibleTabs("main_my_visible_tabs"),
 
     // 播放设置
     PlayerPreferredQn("player_preferred_qn"),

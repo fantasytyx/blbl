@@ -48,7 +48,11 @@ import blbl.cat3399.feature.player.AudioBalanceLevel
 import blbl.cat3399.feature.player.PlaybackSettingChoices
 import blbl.cat3399.feature.player.PlayerCustomShortcutCatalog
 import blbl.cat3399.feature.risk.GaiaVgateActivity
+import blbl.cat3399.feature.category.CategoryZones
 import blbl.cat3399.feature.custom.CustomPageTabRegistry
+import blbl.cat3399.feature.home.HomeTabs
+import blbl.cat3399.feature.live.LiveFragment
+import blbl.cat3399.feature.my.MyTabs
 import blbl.cat3399.ui.MainRootNavRegistry
 import blbl.cat3399.ui.MainActivity
 import kotlinx.coroutines.CancellationException
@@ -820,6 +824,46 @@ class SettingsInteractionHandler(
                 }
             }
 
+            SettingId.MainHomeVisibleTabs -> {
+                showVisibleTabsDialog(
+                    sectionIndex = state.currentSectionIndex,
+                    focusId = entry.id,
+                    title = "主页显示页面",
+                    options = HomeTabs.all.map { it.key to activity.getString(it.titleRes) },
+                    selectedKeys = prefs.mainHomeVisibleTabs,
+                ) { prefs.mainHomeVisibleTabs = it }
+            }
+
+            SettingId.MainCategoryVisibleTabs -> {
+                showVisibleTabsDialog(
+                    sectionIndex = state.currentSectionIndex,
+                    focusId = entry.id,
+                    title = "分类页显示页面",
+                    options = CategoryZones.defaultZones.map { CategoryZones.stableKeyFor(it) to it.title },
+                    selectedKeys = prefs.mainCategoryVisibleTabs,
+                ) { prefs.mainCategoryVisibleTabs = it }
+            }
+
+            SettingId.MainLiveVisibleTabs -> {
+                showVisibleTabsDialog(
+                    sectionIndex = state.currentSectionIndex,
+                    focusId = entry.id,
+                    title = "直播页显示页面",
+                    options = LiveFragment.LiveTabs.all.map { it.key to it.title },
+                    selectedKeys = prefs.mainLiveVisibleTabs,
+                ) { prefs.mainLiveVisibleTabs = it }
+            }
+
+            SettingId.MainMyVisibleTabs -> {
+                showVisibleTabsDialog(
+                    sectionIndex = state.currentSectionIndex,
+                    focusId = entry.id,
+                    title = "我的页显示页面",
+                    options = MyTabs.all.map { it.key to activity.getString(it.titleRes) },
+                    selectedKeys = prefs.mainMyVisibleTabs,
+                ) { prefs.mainMyVisibleTabs = it }
+            }
+
             SettingId.UiScaleFactor -> {
                 val factors = (70..140 step 5).map { it / 100f }
                 val items = factors.map { SettingsText.uiScaleFactorText(it) }
@@ -1506,6 +1550,45 @@ class SettingsInteractionHandler(
         ) { _, label ->
             onPicked(label)
         }
+    }
+
+    private fun showVisibleTabsDialog(
+        sectionIndex: Int,
+        focusId: SettingId,
+        title: String,
+        options: List<Pair<String, String>>,
+        selectedKeys: List<String>,
+        save: (List<String>) -> Unit,
+    ) {
+        val keys = options.map { it.first }
+        val labels = options.map { it.second }
+        val selected =
+            selectedKeys
+                .takeIf { it.isNotEmpty() }
+                ?.toSet()
+                ?: keys.toSet()
+        val checked = BooleanArray(keys.size) { idx -> keys.getOrNull(idx) in selected }
+        if (checked.none { it } && checked.isNotEmpty()) {
+            for (idx in checked.indices) checked[idx] = true
+        }
+
+        AppPopup.multiChoice(
+            context = activity,
+            title = title,
+            items = labels,
+            checked = checked,
+            minCheckedCount = 1,
+            onChanged = { finalChecked ->
+                save(
+                    keys.filterIndexed { idx, _ ->
+                        idx in finalChecked.indices && finalChecked[idx]
+                    },
+                )
+            },
+            onDismiss = {
+                renderer.showSection(sectionIndex, focusId = focusId)
+            },
+        )
     }
 
     private fun showPlayerOsdButtonsDialog(sectionIndex: Int, focusId: SettingId) {

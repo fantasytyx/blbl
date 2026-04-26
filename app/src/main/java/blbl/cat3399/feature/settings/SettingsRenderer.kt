@@ -246,6 +246,30 @@ class SettingsRenderer(
                         SettingsText.followingListOrderText(prefs.followingListOrder),
                         null,
                     ),
+                    SettingEntry(
+                        SettingId.MainHomeVisibleTabs,
+                        "主页显示页面",
+                        SettingsText.mainHomeVisibleTabsText(activity, prefs.mainHomeVisibleTabs),
+                        null,
+                    ),
+                    SettingEntry(
+                        SettingId.MainCategoryVisibleTabs,
+                        "分类页显示页面",
+                        SettingsText.mainCategoryVisibleTabsText(prefs.mainCategoryVisibleTabs),
+                        null,
+                    ),
+                    SettingEntry(
+                        SettingId.MainLiveVisibleTabs,
+                        "直播页显示页面",
+                        SettingsText.mainLiveVisibleTabsText(prefs.mainLiveVisibleTabs),
+                        null,
+                    ),
+                    SettingEntry(
+                        SettingId.MainMyVisibleTabs,
+                        "我的页显示页面",
+                        SettingsText.mainMyVisibleTabsText(activity, prefs.mainMyVisibleTabs),
+                        null,
+                    ),
                 )
 
             "播放设置" ->
