@@ -52,15 +52,7 @@ internal class IjkPlayerEngine(
         set(value) {
             playWhenReadyInternal = value
             val p = ijk ?: return
-            if (!prepared) return
-            runCatching {
-                if (value) {
-                    p.start()
-                } else {
-                    p.pause()
-                }
-            }
-            notifyIsPlayingIfChanged()
+            syncPlayWhenReadyToNative(p)
         }
 
     override val duration: Long
@@ -115,6 +107,7 @@ internal class IjkPlayerEngine(
     override fun seekTo(positionMs: Long) {
         val p = ijk ?: return
         val pos = positionMs.coerceAtLeast(0L)
+        val leavesEndedState = seekLeavesEndedState(pos)
         val vod = source as? PlaybackSource.Vod
         val dash = vod?.playable as? Playable.Dash
         if (!prepared) {
@@ -130,6 +123,7 @@ internal class IjkPlayerEngine(
         }
         if (dash == null) {
             runCatching { p.seekTo(pos) }
+                .onSuccess { handleSeekLeavesEndedState(p, leavesEndedState) }
             return
         }
 
@@ -143,6 +137,7 @@ internal class IjkPlayerEngine(
             )
         }
         runCatching { p.seekTo(pos) }
+            .onSuccess { handleSeekLeavesEndedState(p, leavesEndedState) }
     }
 
     override val playbackSpeed: Float
@@ -300,6 +295,45 @@ internal class IjkPlayerEngine(
         listeners.remove(listener)
     }
 
+    private fun seekLeavesEndedState(positionMs: Long): Boolean {
+        if (playbackStateInternal != Player.STATE_ENDED) return false
+        val d = duration
+        return d <= 0L || positionMs < d
+    }
+
+    private fun handleSeekLeavesEndedState(
+        p: IjkMediaPlayer,
+        leavesEndedState: Boolean,
+    ) {
+        if (!leavesEndedState) return
+        updateState(Player.STATE_BUFFERING)
+        syncPlayWhenReadyToNative(p)
+    }
+
+    private fun settleSeekIfReady(p: IjkMediaPlayer) {
+        if (prepared && !buffering && playbackStateInternal == Player.STATE_BUFFERING) {
+            updateState(Player.STATE_READY)
+        }
+        if (playbackStateInternal == Player.STATE_READY) {
+            syncPlayWhenReadyToNative(p)
+        } else {
+            notifyIsPlayingIfChanged()
+        }
+    }
+
+    private fun syncPlayWhenReadyToNative(p: IjkMediaPlayer) {
+        if (prepared) {
+            runCatching {
+                if (playWhenReadyInternal) {
+                    p.start()
+                } else {
+                    p.pause()
+                }
+            }.onFailure { AppLog.w("IjkEngine", "sync playWhenReady failed", it) }
+        }
+        notifyIsPlayingIfChanged()
+    }
+
     private fun updateState(state: Int) {
         if (playbackStateInternal == state) {
             notifyIsPlayingIfChanged()
@@ -346,10 +380,7 @@ internal class IjkPlayerEngine(
                         pendingSeekMs = null
                         runCatching { p.seekTo(pos.coerceAtLeast(0L)) }
                     }
-                    if (playWhenReadyInternal) {
-                        runCatching { p.start() }
-                    }
-                    notifyIsPlayingIfChanged()
+                    syncPlayWhenReadyToNative(p)
                 },
             )
             p.setOnCompletionListener(
@@ -383,6 +414,7 @@ internal class IjkPlayerEngine(
                         IMediaPlayer.MEDIA_INFO_BUFFERING_END -> {
                             buffering = false
                             updateState(if (prepared) Player.STATE_READY else Player.STATE_BUFFERING)
+                            syncPlayWhenReadyToNative(p)
                         }
 
                         IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
@@ -394,6 +426,7 @@ internal class IjkPlayerEngine(
                         IMediaPlayer.MEDIA_INFO_AUDIO_SEEK_RENDERING_START,
                         -> {
                             listeners.forEach { it.onPositionDiscontinuity(currentPosition) }
+                            settleSeekIfReady(p)
                         }
                     }
                     false
@@ -402,6 +435,7 @@ internal class IjkPlayerEngine(
             p.setOnSeekCompleteListener(
                 IMediaPlayer.OnSeekCompleteListener {
                     listeners.forEach { it.onPositionDiscontinuity(currentPosition) }
+                    settleSeekIfReady(p)
                 },
             )
             p.setOnVideoSizeChangedListener(
