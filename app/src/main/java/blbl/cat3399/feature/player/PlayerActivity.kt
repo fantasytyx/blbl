@@ -68,7 +68,6 @@ import blbl.cat3399.core.ui.FocusTreeUtils
 import blbl.cat3399.core.ui.Immersive
 import blbl.cat3399.core.ui.popup.PopupHost
 import blbl.cat3399.core.util.Format as BlblFormat
-import blbl.cat3399.feature.following.UpDetailActivity
 import blbl.cat3399.feature.my.BangumiDetailActivity
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
 import blbl.cat3399.feature.player.danmaku.DanmakuFontWeight
@@ -105,6 +104,13 @@ class PlayerActivity : BaseActivity() {
     override fun shouldRecreateOnUiScaleChange(): Boolean = true
 
     internal lateinit var binding: ActivityPlayerBinding
+    internal lateinit var upQuickCard: PlayerUpQuickCardController
+    internal val currentUpMid: Long get() = if (::upQuickCard.isInitialized) upQuickCard.currentMid else 0L
+    internal val currentUpName: String? get() = if (::upQuickCard.isInitialized) upQuickCard.currentName else null
+    internal val currentUpAvatar: String? get() = if (::upQuickCard.isInitialized) upQuickCard.currentAvatar else null
+    internal val currentUpFollowed: Boolean? get() = if (::upQuickCard.isInitialized) upQuickCard.currentFollowed else null
+    internal val upFollowActionInFlight: Boolean get() = if (::upQuickCard.isInitialized) upQuickCard.followActionInFlight else false
+
     internal var player: BlblPlayerEngine? = null
     private var ijkRenderView: View? = null
     private var ijkTextureSurface: Surface? = null
@@ -232,10 +238,6 @@ class PlayerActivity : BaseActivity() {
     internal var currentAid: Long? = null
     internal var currentSeasonId: Long? = null
     internal var currentMainTitle: String? = null
-    internal var currentUpMid: Long = 0L
-    internal var currentUpName: String? = null
-    internal var currentUpAvatar: String? = null
-    internal var currentUpFollowed: Boolean? = null
     internal var currentPlayerDesc: String? = null
     internal var currentPlayerViewCount: Long? = null
     internal var currentPlayerDanmakuCount: Long? = null
@@ -244,10 +246,6 @@ class PlayerActivity : BaseActivity() {
     internal var currentPlayerLikeCount: Long? = null
     internal var currentPlayerCoinCount: Long? = null
     internal var currentPlayerFavCount: Long? = null
-    internal var upFollowActionInFlight: Boolean = false
-    internal var upFollowActionJob: Job? = null
-    internal var upFollowStateJob: Job? = null
-    internal var upFollowStateToken: Int = 0
     internal var playerInfoShelfUsesRecommendFallback: Boolean = false
 
     internal var pageListToken: String? = null
@@ -539,6 +537,10 @@ class PlayerActivity : BaseActivity() {
 
     internal var trace: PlaybackTrace? = null
     internal var traceFirstFrameLogged: Boolean = false
+    internal fun requestDecoderReleaseBeforeOpenUpDetail() {
+        requestDecoderReleaseOnStop(reason = "up_detail")
+    }
+
     private fun requestDecoderReleaseOnStop(reason: String) {
         if (reason.isBlank()) return
         val engine = player as? ExoPlayerEngine ?: return
@@ -687,6 +689,18 @@ class PlayerActivity : BaseActivity() {
                 null,
             )
         binding = ActivityPlayerBinding.bind(root)
+        upQuickCard =
+            PlayerUpQuickCardController(
+                activity = this,
+                binding = binding,
+                isCardVisible = { isTopBarContentVisible() },
+                keepControlsVisible = { setControlsVisible(true) },
+                beforeOpenUpDetail = { requestDecoderReleaseBeforeOpenUpDetail() },
+                onUiUpdated = {
+                    updatePlayerInfoUpUi()
+                    updateUpButton()
+                },
+            )
         setContentView(binding.root)
         Immersive.apply(this, prefs.fullscreenEnabled)
         PlayerUiMode.applyVideo(this, binding)
@@ -1956,6 +1970,7 @@ class PlayerActivity : BaseActivity() {
         relatedVideosFetchJob?.cancel()
         commentsFetchJob?.cancel()
         commentThreadFetchJob?.cancel()
+        releaseUpQuickCardJobs()
         pageListLoadMoreJob?.cancel()
         partsListLoadMoreJob?.cancel()
         pageListLoadMoreCallbacks.clear()
@@ -2038,20 +2053,7 @@ class PlayerActivity : BaseActivity() {
     }
 
     internal fun openCurrentUpDetail() {
-        val mid = currentUpMid
-        if (mid <= 0L) {
-            AppToast.show(this, "未获取到 UP 主信息")
-            return
-        }
-        requestDecoderReleaseOnStop(reason = "up_detail")
-        startActivity(
-            Intent(this, UpDetailActivity::class.java)
-                .putExtra(UpDetailActivity.EXTRA_MID, mid)
-                .apply {
-                    currentUpName?.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_NAME, it) }
-                    currentUpAvatar?.takeIf { it.isNotBlank() }?.let { putExtra(UpDetailActivity.EXTRA_AVATAR, it) }
-                },
-        )
+        openUpQuickCardProfile()
     }
 
     internal fun shouldShowOsdOnPlaybackToggle(): Boolean {
@@ -2233,10 +2235,11 @@ class PlayerActivity : BaseActivity() {
             viewData.optJSONObject("owner")
                 ?: viewData.optJSONObject("up_info")
                 ?: JSONObject()
-        currentUpMid = owner.optLong("mid").takeIf { it > 0L } ?: 0L
-        currentUpName = owner.optString("name", "").trim().takeIf { it.isNotBlank() }
-        currentUpAvatar = owner.optString("face", "").trim().takeIf { it.isNotBlank() }
-        updateUpButton()
+        setUpQuickCardOwner(
+            mid = owner.optLong("mid").takeIf { it > 0L } ?: 0L,
+            name = owner.optString("name", "").trim().takeIf { it.isNotBlank() },
+            avatar = owner.optString("face", "").trim().takeIf { it.isNotBlank() },
+        )
         applyUpFollowStateFromView(viewData)
     }
 

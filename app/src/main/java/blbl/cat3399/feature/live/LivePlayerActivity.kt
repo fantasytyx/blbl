@@ -2,8 +2,8 @@
 
 package blbl.cat3399.feature.live
 
-import android.net.Uri
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -61,6 +61,7 @@ import blbl.cat3399.feature.player.PlayerOsdSizing
 import blbl.cat3399.feature.player.PlayerSettingsAdapter
 import blbl.cat3399.feature.player.PlayerTouchController
 import blbl.cat3399.feature.player.PlayerTouchGestureHost
+import blbl.cat3399.feature.player.PlayerUpQuickCardController
 import blbl.cat3399.feature.player.PlayerUiMode
 import blbl.cat3399.feature.player.areaText
 import blbl.cat3399.feature.player.danmaku.DanmakuSessionSettings
@@ -98,6 +99,8 @@ class LivePlayerActivity : BaseActivity() {
     override fun shouldRecreateOnUiScaleChange(): Boolean = true
 
     private lateinit var binding: ActivityPlayerBinding
+    private lateinit var upQuickCard: PlayerUpQuickCardController
+
     private var player: BlblPlayerEngine? = null
     private var ijkRenderView: View? = null
     private var ijkTextureSurface: Surface? = null
@@ -140,8 +143,10 @@ class LivePlayerActivity : BaseActivity() {
 
     private var roomId: Long = 0L
     private var realRoomId: Long = 0L
+    private var roomUid: Long = 0L
     private var roomTitle: String = ""
     private var roomUname: String = ""
+    private var roomFace: String? = null
 
     private var session: LiveSession = LiveSession()
     private val debug = PlayerDebugMetrics()
@@ -168,6 +173,14 @@ class LivePlayerActivity : BaseActivity() {
                 null,
             )
         binding = ActivityPlayerBinding.bind(root)
+        upQuickCard =
+            PlayerUpQuickCardController(
+                activity = this,
+                binding = binding,
+                isCardVisible = { controlsVisible },
+                keepControlsVisible = { setControlsVisible(true) },
+                beforeOpenUpDetail = { runCatching { player?.pause() } },
+            )
         setContentView(binding.root)
         Immersive.apply(this, prefs.fullscreenEnabled)
         PlayerUiMode.applyLive(this, binding)
@@ -222,6 +235,7 @@ class LivePlayerActivity : BaseActivity() {
         binding.btnListPanel.visibility = View.GONE
         binding.btnComments.visibility = View.VISIBLE
 
+        setupUpQuickCard()
         binding.btnBack.setOnClickListener { finish() }
 
         val desiredEngineKind = session.engineKind
@@ -429,6 +443,36 @@ class LivePlayerActivity : BaseActivity() {
         if (hasFocus) Immersive.apply(this, BiliClient.prefs.fullscreenEnabled)
     }
 
+    private fun setupUpQuickCard() {
+        binding.btnUpQuickProfile.nextFocusDownId = R.id.btn_play_pause
+        binding.btnUpQuickFollow.nextFocusDownId = R.id.btn_play_pause
+        listOf(
+            binding.btnPlayPause,
+            binding.btnDanmaku,
+            binding.btnComments,
+            binding.btnAdvanced,
+        ).forEach { it.nextFocusUpId = R.id.btn_up_quick_profile }
+        upQuickCard.setupActions()
+        upQuickCard.setOwner(mid = roomUid, name = roomUname, avatar = roomFace)
+        upQuickCard.refreshFollowStateIfNeeded(force = false)
+    }
+
+    private fun updateLiveUpQuickCardOwner(info: BiliApi.LiveRoomInfo) {
+        roomUid = info.uid.takeIf { it > 0L } ?: roomUid
+        roomUname =
+            info.uname
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: roomUname
+        roomFace =
+            info.faceUrl
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: roomFace
+        upQuickCard.setOwner(mid = roomUid, name = roomUname, avatar = roomFace)
+        upQuickCard.refreshFollowStateIfNeeded(force = false)
+    }
+
     override fun onStop() {
         touchController?.onStop()
         super.onStop()
@@ -445,6 +489,7 @@ class LivePlayerActivity : BaseActivity() {
         autoFailoverJob?.cancel()
         autoFailoverInFlight = false
         autoHideJob?.cancel()
+        upQuickCard.release()
         resetBufferingOverlayState()
         binding.playerView.player = null
         player?.setVideoSurface(null)
@@ -1047,10 +1092,13 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     private fun setControlsVisible(visible: Boolean) {
+        val hadControlsFocus = hasControlsFocus()
         controlsVisible = visible && !isTouchLocked()
         val show = controlsVisible || binding.settingsPanel.visibility == View.VISIBLE
         binding.topBar.visibility = if (show) View.VISIBLE else View.GONE
         binding.bottomBar.visibility = if (show) View.VISIBLE else View.GONE
+        upQuickCard.updateUi()
+        if (!show && hadControlsFocus) binding.root.requestFocus()
 
         onTouchOverlayStateChanged()
         restartAutoHideTimer()
@@ -1072,8 +1120,15 @@ class LivePlayerActivity : BaseActivity() {
     }
 
     private fun focusFirstControl(): Boolean {
-        if (binding.btnPlayPause.visibility == View.VISIBLE) return binding.btnPlayPause.requestFocus()
-        return binding.btnBack.requestFocus()
+        return requestFocusControlNow(binding.btnPlayPause) || requestFocusControlNow(binding.btnBack)
+    }
+
+    private fun requestFocusControlNow(view: View?): Boolean {
+        val target = view ?: return false
+        if (!target.isShown) return false
+        if (!target.isEnabled) return false
+        if (!target.isFocusable) return false
+        return target.requestFocus()
     }
 
     private fun focusAdvancedControl(): Boolean {
@@ -1098,7 +1153,9 @@ class LivePlayerActivity : BaseActivity() {
 
     private fun hasControlsFocus(): Boolean {
         if (binding.settingsPanel.visibility == View.VISIBLE) return true
-        return binding.topBar.hasFocus() || binding.bottomBar.hasFocus()
+        return binding.topBar.hasFocus() ||
+            binding.cardUpQuick.hasFocus() ||
+            binding.bottomBar.hasFocus()
     }
 
     private fun initTouchGestures() {
@@ -1418,6 +1475,7 @@ class LivePlayerActivity : BaseActivity() {
             val info = BiliApi.liveRoomInfo(roomId)
             realRoomId = info.roomId
             lastLiveStatus = info.liveStatus
+            updateLiveUpQuickCardOwner(info)
 
             val title = info.title.ifBlank { roomTitle }
             binding.tvTitle.text =
@@ -2080,6 +2138,7 @@ class LivePlayerActivity : BaseActivity() {
 
         private const val EXTRA_ENGINE_SWITCH_SESSION_JSON = "engine_switch_session_json"
         private const val LIVE_QN_ORIGINAL = 10_000
+
         private const val AUTO_HIDE_MS = 4_000L
         private const val SEEK_HINT_HIDE_DELAY_MS = 900L
         private const val BACK_DOUBLE_PRESS_WINDOW_MS = 2_500L

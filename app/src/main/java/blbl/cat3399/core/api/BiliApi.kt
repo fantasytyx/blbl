@@ -237,6 +237,8 @@ object BiliApi {
     data class LiveRoomInfo(
         val roomId: Long,
         val uid: Long,
+        val uname: String?,
+        val faceUrl: String?,
         val title: String,
         val liveStatus: Int,
         val areaName: String?,

@@ -199,6 +199,8 @@ internal object LiveApi {
         return BiliApi.LiveRoomInfo(
             roomId = data.optLong("room_id").takeIf { it > 0 } ?: roomId,
             uid = data.optLong("uid").takeIf { it > 0 } ?: 0L,
+            uname = data.optString("uname", "").trim().takeIf { it.isNotBlank() },
+            faceUrl = data.optString("face", "").trim().takeIf { it.isNotBlank() },
             title = data.optString("title", ""),
             liveStatus = data.optInt("live_status", 0),
             areaName = data.optString("area_name", "").trim().takeIf { it.isNotBlank() },

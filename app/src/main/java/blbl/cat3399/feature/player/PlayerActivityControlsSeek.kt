@@ -60,7 +60,7 @@ internal fun PlayerActivity.setControlsVisible(visible: Boolean) {
     binding.controlsRow.visibility = if (show) View.VISIBLE else View.GONE
     binding.tvTime.visibility = if (show) View.VISIBLE else View.GONE
     updateTopBarUi()
-    binding.cardUpQuick.visibility = if (show && currentUpMid > 0L) View.VISIBLE else View.GONE
+    updateUpQuickCardUi()
     binding.bottomBar.visibility = if (show) View.VISIBLE else View.GONE
     if (show) {
         applyBottomBarFullLayout()
