@@ -111,43 +111,28 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Legacy themed aliases are kept as explicit components only.
+             Foreground theme switching must not enable/disable launcher aliases because Android
+             can finish the current task when its launcher component is disabled. -->
         <activity-alias
             android:name=".ui.MainLauncherTvPinkAlias"
             android:banner="@drawable/tv_banner"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name"
             android:roundIcon="@mipmap/ic_launcher_round"
-            android:targetActivity=".ui.SplashTvPinkActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
+            android:targetActivity=".ui.SplashTvPinkActivity" />
 
         <activity-alias
             android:name=".ui.MainLauncherTvPinkIllustrationAlias"
             android:banner="@drawable/tv_banner"
             android:enabled="false"
-            android:exported="true"
+            android:exported="false"
             android:icon="@mipmap/ic_launcher"
             android:label="@string/app_name"
             android:roundIcon="@mipmap/ic_launcher_round"
-            android:targetActivity=".ui.SplashTvPinkIllustrationActivity">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-        </activity-alias>
+            android:targetActivity=".ui.SplashTvPinkIllustrationActivity" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
