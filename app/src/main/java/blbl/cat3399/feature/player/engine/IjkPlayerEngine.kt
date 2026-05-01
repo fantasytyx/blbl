@@ -2,6 +2,7 @@ package blbl.cat3399.feature.player.engine
 
 import android.content.Context
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.Surface
 import androidx.media3.common.Player
 import blbl.cat3399.BuildConfig
@@ -28,6 +29,9 @@ internal class IjkPlayerEngine(
     private var preparing: Boolean = false
     private var prepareRequested: Boolean = false
     private var pendingSeekMs: Long? = null
+    private var visibleSeekPositionMs: Long? = null
+    private var visibleSeekStartedAtMs: Long = 0L
+    private var visibleSeekClearsOnFirstFrame: Boolean = false
 
     private var playbackStateInternal: Int = Player.STATE_IDLE
     private var playWhenReadyInternal: Boolean = false
@@ -66,11 +70,14 @@ internal class IjkPlayerEngine(
         }
 
     override val currentPosition: Long
-        get() = ijk?.currentPosition ?: 0L
+        get() = visibleSeekPositionOrNull() ?: ijk?.currentPosition?.coerceAtLeast(0L) ?: 0L
 
     override val bufferedPosition: Long
         get() {
             val p = ijk ?: return 0L
+            visibleSeekPositionOrNull()?.let { seekPosition ->
+                return duration.takeIf { it > 0L }?.let { seekPosition.coerceIn(0L, it) } ?: seekPosition
+            }
             val pos = p.currentPosition.coerceAtLeast(0L)
             val vCache = p.videoCachedDuration.coerceAtLeast(0L)
             val aCache = p.audioCachedDuration.coerceAtLeast(0L)
@@ -116,14 +123,20 @@ internal class IjkPlayerEngine(
             if (dash != null) {
                 pendingSeekMs = null
                 runCatching { p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "seek-at-start", pos) }
+                    .onSuccess { markVisibleSeekPosition(pos, clearsOnFirstFrame = true) }
             } else {
                 pendingSeekMs = pos
+                markVisibleSeekPosition(pos, clearsOnFirstFrame = false)
             }
             return
         }
         if (dash == null) {
             runCatching { p.seekTo(pos) }
-                .onSuccess { handleSeekLeavesEndedState(p, leavesEndedState) }
+                .onSuccess {
+                    markVisibleSeekPosition(pos, clearsOnFirstFrame = false)
+                    handleSeekLeavesEndedState(p, leavesEndedState)
+                }
+                .onFailure { clearVisibleSeekPosition() }
             return
         }
 
@@ -137,7 +150,11 @@ internal class IjkPlayerEngine(
             )
         }
         runCatching { p.seekTo(pos) }
-            .onSuccess { handleSeekLeavesEndedState(p, leavesEndedState) }
+            .onSuccess {
+                markVisibleSeekPosition(pos, clearsOnFirstFrame = false)
+                handleSeekLeavesEndedState(p, leavesEndedState)
+            }
+            .onFailure { clearVisibleSeekPosition() }
     }
 
     override val playbackSpeed: Float
@@ -170,6 +187,7 @@ internal class IjkPlayerEngine(
         preparing = false
         prepareRequested = false
         pendingSeekMs = null
+        clearVisibleSeekPosition()
         updateState(Player.STATE_IDLE)
 
         runCatching { ensurePlayer() }.onFailure { t ->
@@ -183,6 +201,7 @@ internal class IjkPlayerEngine(
         prepared = false
         buffering = false
         preparing = false
+        clearVisibleSeekPosition()
         updateState(Player.STATE_IDLE)
 
         applyCommonOptions(p)
@@ -266,6 +285,7 @@ internal class IjkPlayerEngine(
         preparing = false
         prepareRequested = false
         pendingSeekMs = null
+        clearVisibleSeekPosition()
         updateState(Player.STATE_IDLE)
     }
 
@@ -277,6 +297,7 @@ internal class IjkPlayerEngine(
         preparing = false
         prepareRequested = false
         pendingSeekMs = null
+        clearVisibleSeekPosition()
         updateState(Player.STATE_IDLE)
 
         val p = ijk
@@ -299,6 +320,28 @@ internal class IjkPlayerEngine(
         if (playbackStateInternal != Player.STATE_ENDED) return false
         val d = duration
         return d <= 0L || positionMs < d
+    }
+
+    private fun markVisibleSeekPosition(positionMs: Long, clearsOnFirstFrame: Boolean) {
+        visibleSeekPositionMs = positionMs.coerceAtLeast(0L)
+        visibleSeekStartedAtMs = SystemClock.elapsedRealtime()
+        visibleSeekClearsOnFirstFrame = clearsOnFirstFrame
+    }
+
+    private fun clearVisibleSeekPosition() {
+        visibleSeekPositionMs = null
+        visibleSeekStartedAtMs = 0L
+        visibleSeekClearsOnFirstFrame = false
+    }
+
+    private fun visibleSeekPositionOrNull(): Long? {
+        val position = visibleSeekPositionMs ?: return null
+        val elapsedMs = SystemClock.elapsedRealtime() - visibleSeekStartedAtMs
+        if (!visibleSeekClearsOnFirstFrame && elapsedMs > VISIBLE_SEEK_POSITION_TIMEOUT_MS) {
+            clearVisibleSeekPosition()
+            return null
+        }
+        return position
     }
 
     private fun handleSeekLeavesEndedState(
@@ -373,12 +416,17 @@ internal class IjkPlayerEngine(
                     prepared = true
                     buffering = false
                     preparing = false
+                    val preparedSeekMs = pendingSeekMs?.coerceAtLeast(0L)
+                    if (preparedSeekMs != null) {
+                        markVisibleSeekPosition(preparedSeekMs, clearsOnFirstFrame = false)
+                    }
                     updateState(Player.STATE_READY)
                     runCatching { p.setLooping(repeatModeInternal == Player.REPEAT_MODE_ONE) }
                     runCatching { p.setSpeed(playbackSpeedInternal) }
-                    pendingSeekMs?.let { pos ->
+                    preparedSeekMs?.let { target ->
                         pendingSeekMs = null
-                        runCatching { p.seekTo(pos.coerceAtLeast(0L)) }
+                        runCatching { p.seekTo(target) }
+                            .onFailure { clearVisibleSeekPosition() }
                     }
                     syncPlayWhenReadyToNative(p)
                 },
@@ -388,6 +436,7 @@ internal class IjkPlayerEngine(
                     prepared = true
                     buffering = false
                     preparing = false
+                    clearVisibleSeekPosition()
                     updateState(Player.STATE_ENDED)
                     notifyIsPlayingIfChanged()
                 },
@@ -398,6 +447,7 @@ internal class IjkPlayerEngine(
                     prepared = false
                     buffering = false
                     preparing = false
+                    clearVisibleSeekPosition()
                     updateState(Player.STATE_IDLE)
                     listeners.forEach { it.onPlayerError(e) }
                     true
@@ -418,6 +468,7 @@ internal class IjkPlayerEngine(
                         }
 
                         IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
+                            if (visibleSeekClearsOnFirstFrame) clearVisibleSeekPosition()
                             listeners.forEach { it.onRenderedFirstFrame() }
                         }
 
@@ -425,6 +476,7 @@ internal class IjkPlayerEngine(
                         IMediaPlayer.MEDIA_INFO_VIDEO_SEEK_RENDERING_START,
                         IMediaPlayer.MEDIA_INFO_AUDIO_SEEK_RENDERING_START,
                         -> {
+                            clearVisibleSeekPosition()
                             listeners.forEach { it.onPositionDiscontinuity(currentPosition) }
                             settleSeekIfReady(p)
                         }
@@ -648,6 +700,7 @@ internal class IjkPlayerEngine(
         runCatching { p.prepareAsync() }
             .onFailure { t ->
                 preparing = false
+                clearVisibleSeekPosition()
                 updateState(Player.STATE_IDLE)
                 listeners.forEach { it.onPlayerError(t) }
             }
@@ -713,5 +766,6 @@ internal class IjkPlayerEngine(
 
     private companion object {
         private const val MAX_BUFFERED_FORWARD_ESTIMATE_MS: Long = 5 * 60_000L
+        private const val VISIBLE_SEEK_POSITION_TIMEOUT_MS: Long = 10_000L
     }
 }
