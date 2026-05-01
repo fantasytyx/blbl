@@ -50,6 +50,7 @@ import blbl.cat3399.feature.player.PlaybackSettingChoices
 import blbl.cat3399.feature.player.PlayerCustomShortcutCatalog
 import blbl.cat3399.feature.risk.GaiaVgateActivity
 import blbl.cat3399.feature.category.CategoryZones
+import blbl.cat3399.feature.custom.CustomPageSearchSourceKind
 import blbl.cat3399.feature.custom.CustomPageTabRegistry
 import blbl.cat3399.feature.home.HomeTabs
 import blbl.cat3399.feature.live.LiveFragment
@@ -2193,9 +2194,63 @@ class SettingsInteractionHandler(
                         val current = loadConfig()
                         saveConfig(current.copy(tabs = current.tabs + directOption.config))
                         showManager(focusStableKey = directOption.config.stableKey())
+                    } else if (picked.key == CustomPageTabRegistry.GROUP_SEARCH) {
+                        showSearchTypePicker()
                     } else {
                         showAddLeafPicker(group = picked)
                     }
+                }
+            }
+
+            private fun showSearchTypePicker() {
+                var forward = false
+                val config = loadConfig()
+                val kinds = CustomPageTabRegistry.availableSearchSourceKinds(config)
+                if (kinds.isEmpty()) {
+                    AppToast.show(activity, "暂无可添加的搜索历史")
+                    showAddPicker()
+                    return
+                }
+
+                AppPopup.singleChoice(
+                    context = activity,
+                    title = "添加搜索页面",
+                    items = kinds.map { it.label },
+                    checkedIndex = 0,
+                    onDismiss = {
+                        if (!forward) showAddPicker()
+                    },
+                ) { which, _ ->
+                    val picked = kinds.getOrNull(which) ?: return@singleChoice
+                    forward = true
+                    showSearchHistoryPicker(kind = picked)
+                }
+            }
+
+            private fun showSearchHistoryPicker(kind: CustomPageSearchSourceKind) {
+                var forward = false
+                val config = loadConfig()
+                val options = CustomPageTabRegistry.availableSearchHistoryOptions(kind.sourceType, config)
+                if (options.isEmpty()) {
+                    AppToast.show(activity, "该类别下暂无可添加的搜索历史")
+                    showSearchTypePicker()
+                    return
+                }
+
+                AppPopup.singleChoice(
+                    context = activity,
+                    title = "添加${kind.label}搜索",
+                    items = options.map { it.label },
+                    checkedIndex = 0,
+                    onDismiss = {
+                        if (!forward) showSearchTypePicker()
+                    },
+                ) { which, _ ->
+                    val picked = options.getOrNull(which) ?: return@singleChoice
+                    forward = true
+                    val current = loadConfig()
+                    saveConfig(current.copy(tabs = current.tabs + picked.config))
+                    showManager(focusStableKey = picked.config.stableKey())
                 }
             }
 
