@@ -424,8 +424,8 @@ internal class IjkPlayerEngine(
                         false
                     },
                 )
-                // Keep native warnings/errors visible without dumping verbose DASH HTTP requests by default.
-                runCatching { IjkMediaPlayer.native_setLogLevel(IjkMediaPlayer.IJK_LOG_INFO) }
+                // Keep DASH/native playback diagnostics visible while validating custom ijk builds.
+                runCatching { IjkMediaPlayer.native_setLogLevel(IjkMediaPlayer.IJK_LOG_DEBUG) }
             }
         }
     }
