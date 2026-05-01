@@ -3,15 +3,11 @@ package blbl.cat3399.ui
 import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.TypedValue
 import android.view.KeyEvent
-import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.ViewTreeObserver
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.lifecycle.Lifecycle
@@ -39,8 +35,6 @@ import blbl.cat3399.core.ui.TabContentSwitchFocusHost
 import blbl.cat3399.core.ui.cloneInUserScale
 import blbl.cat3399.core.ui.dispatchToAncestorDpadItemKeyHandler
 import blbl.cat3399.core.ui.popup.AppPopup
-import blbl.cat3399.core.ui.popup.PopupAction
-import blbl.cat3399.core.ui.popup.PopupActionRole
 import blbl.cat3399.core.ui.popup.PopupHandle
 import blbl.cat3399.core.update.ApkUpdateFlow
 import blbl.cat3399.core.update.ApkUpdater
@@ -880,44 +874,18 @@ class MainActivity : BaseActivity(), SidebarFocusHost {
         autoUpdatePromptShownVersion = update.versionName
 
         autoUpdatePromptPopup =
-            AppPopup.custom(
-                context = this,
-                title = "发现新版本 ${update.versionName}",
-                cancelable = true,
-                actions =
-                    listOf(
-                        PopupAction(role = PopupActionRole.NEGATIVE, text = "本次关闭"),
-                        PopupAction(role = PopupActionRole.NEUTRAL, text = "此版本不再提醒") {
-                            BiliClient.prefs.autoUpdateIgnoredVersionName = update.versionName
-                            pendingAutoUpdate = null
-                        },
-                        PopupAction(role = PopupActionRole.POSITIVE, text = "立即更新") {
-                            ApkUpdateFlow.startDownloadAndInstall(
-                                activity = this,
-                                latestVersionHint = update.versionName,
-                            )
-                        },
-                    ),
-                preferredActionRole = PopupActionRole.POSITIVE,
+            ApkUpdateFlow.showUpdatePrompt(
+                activity = this,
+                update = update,
+                onSkipVersion = { pendingAutoUpdate = null },
                 onDismiss = {
                     autoUpdatePromptPopup = null
                 },
-            ) { dialogContext ->
-                val scroll =
-                    ScrollView(dialogContext).apply {
-                        isFocusable = false
-                        isFocusableInTouchMode = false
-                        descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-                        overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-                    }
-                val tv =
-                    LayoutInflater.from(dialogContext)
-                        .inflate(R.layout.view_popup_message, scroll, false) as TextView
-                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                tv.setLineSpacing(2f, 1.05f)
-                tv.text = update.displayChangelog
-                scroll.addView(tv)
-                scroll
+            ) {
+                ApkUpdateFlow.startDownloadAndInstall(
+                    activity = this,
+                    latestVersionHint = update.versionName,
+                )
             }
     }
 

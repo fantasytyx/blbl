@@ -1518,10 +1518,12 @@ class SettingsInteractionHandler(
                     }
 
                     is TestUpdateCheckState.UpdateAvailable -> {
-                        startTestUpdateDownload(latestVersionHint = checkState.latestVersion)
+                        ApkUpdateFlow.showUpdatePrompt(activity, checkState.update) {
+                            startTestUpdateDownload(checkState.latestVersion)
+                        }
                     }
 
-                    else -> ensureTestUpdateChecked(force = true, refreshUi = true)
+                    else -> ensureTestUpdateChecked(force = true, refreshUi = true, promptIfUpdate = true)
                 }
             }
 
@@ -2563,7 +2565,7 @@ class SettingsInteractionHandler(
         return total.coerceAtLeast(0L)
     }
 
-    private fun ensureTestUpdateChecked(force: Boolean, refreshUi: Boolean = true) {
+    private fun ensureTestUpdateChecked(force: Boolean, refreshUi: Boolean = true, promptIfUpdate: Boolean = false) {
         if (testUpdateJob?.isActive == true) return
         if (testUpdateCheckJob?.isActive == true) return
         if (state.testUpdateCheckState is TestUpdateCheckState.Checking) return
@@ -2584,15 +2586,21 @@ class SettingsInteractionHandler(
         testUpdateCheckJob =
             activity.lifecycleScope.launch {
                 try {
-                    val latest = ApkUpdater.fetchLatestUpdate().versionName
+                    val update = ApkUpdater.fetchLatestUpdate()
+                    val latest = update.versionName
                     val current = BuildConfig.VERSION_NAME
                     state.testUpdateCheckState =
                         if (ApkUpdater.isRemoteNewer(latest, current)) {
-                            TestUpdateCheckState.UpdateAvailable(latest)
+                            TestUpdateCheckState.UpdateAvailable(update)
                         } else {
                             TestUpdateCheckState.Latest(latest)
                         }
                     state.testUpdateCheckedAtMs = System.currentTimeMillis()
+                    if (promptIfUpdate && state.testUpdateCheckState is TestUpdateCheckState.UpdateAvailable) {
+                        ApkUpdateFlow.showUpdatePrompt(activity, update) {
+                            startTestUpdateDownload(update.versionName)
+                        }
+                    }
                 } catch (_: CancellationException) {
                     return@launch
                 } catch (t: Throwable) {
@@ -2614,9 +2622,15 @@ class SettingsInteractionHandler(
                 activity = activity,
                 latestVersionHint = latestVersionHint,
             ) { latestVersion, isNewer ->
+                val changelog = (state.testUpdateCheckState as? TestUpdateCheckState.UpdateAvailable)?.update?.changelog ?: ""
                 state.testUpdateCheckState =
                     if (isNewer) {
-                        TestUpdateCheckState.UpdateAvailable(latestVersion)
+                        TestUpdateCheckState.UpdateAvailable(
+                            ApkUpdater.RemoteUpdate(
+                                versionName = latestVersion,
+                                changelog = changelog,
+                            ),
+                        )
                     } else {
                         TestUpdateCheckState.Latest(latestVersion)
                     }

@@ -1,17 +1,71 @@
 package blbl.cat3399.core.update
 
+import android.util.TypedValue
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import blbl.cat3399.BuildConfig
+import blbl.cat3399.R
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.net.BiliClient
 import blbl.cat3399.core.ui.AppToast
 import blbl.cat3399.core.ui.popup.AppPopup
+import blbl.cat3399.core.ui.popup.PopupAction
+import blbl.cat3399.core.ui.popup.PopupActionRole
+import blbl.cat3399.core.ui.popup.PopupHandle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 object ApkUpdateFlow {
     private var activeJob: Job? = null
+
+    fun showUpdatePrompt(
+        activity: ComponentActivity,
+        update: ApkUpdater.RemoteUpdate,
+        onSkipVersion: (() -> Unit)? = null,
+        onDismiss: (() -> Unit)? = null,
+        onUpdate: () -> Unit,
+    ): PopupHandle? {
+        return AppPopup.custom(
+            context = activity,
+            title = "发现新版本 ${update.versionName}",
+            cancelable = true,
+            actions =
+                listOf(
+                    PopupAction(role = PopupActionRole.NEGATIVE, text = "本次关闭"),
+                    PopupAction(role = PopupActionRole.NEUTRAL, text = "此版本不再提醒") {
+                        BiliClient.prefs.autoUpdateIgnoredVersionName = update.versionName
+                        onSkipVersion?.invoke()
+                    },
+                    PopupAction(role = PopupActionRole.POSITIVE, text = "立即更新") {
+                        onUpdate()
+                    },
+                ),
+            preferredActionRole = PopupActionRole.POSITIVE,
+            onDismiss = onDismiss,
+        ) { dialogContext ->
+            val scroll =
+                ScrollView(dialogContext).apply {
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                    overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+                }
+            val tv =
+                LayoutInflater.from(dialogContext)
+                    .inflate(R.layout.view_popup_message, scroll, false) as TextView
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            tv.setLineSpacing(2f, 1.05f)
+            tv.text = update.displayChangelog
+            scroll.addView(tv)
+            scroll
+        }
+    }
 
     fun startDownloadAndInstall(
         activity: ComponentActivity,
