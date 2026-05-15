@@ -154,6 +154,7 @@ class PlayerActivity : BaseActivity() {
     internal var holdSeekJob: kotlinx.coroutines.Job? = null
     internal var seekHintJob: kotlinx.coroutines.Job? = null
     internal var keyScrubEndJob: kotlinx.coroutines.Job? = null
+    internal var videoShotPreviewHideJob: kotlinx.coroutines.Job? = null
     internal val sponsorSubmitPanelState = SponsorSubmitPanelState()
     internal var sponsorSubmitUploadJob: Job? = null
     internal var keyScrubPendingSeekToMs: Long? = null
@@ -1903,6 +1904,7 @@ class PlayerActivity : BaseActivity() {
         holdSeekJob?.cancel()
         seekHintJob?.cancel()
         keyScrubEndJob?.cancel()
+        videoShotPreviewHideJob?.cancel()
         sponsorSubmitUploadJob?.cancel()
         startupEnhancementJob?.cancel()
         startupEnhancementJob = null
@@ -2122,10 +2124,9 @@ class PlayerActivity : BaseActivity() {
                             currentVideoShot != null &&
                                 BiliClient.prefs.playerVideoShotPreviewSize != AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF
                         if (hasVideoShot) {
-                            binding.videoShotPreview.visibility = View.VISIBLE
-                            updateVideoShotPreview(progress, SEEK_MAX, previewPos, binding.seekProgress)
+                            showVideoShotPreviewForSeek(progress, SEEK_MAX, previewPos, binding.seekProgress)
                         } else {
-                            binding.videoShotPreview.visibility = View.GONE
+                            hideVideoShotPreviewNow()
                         }
                     }
 
@@ -2166,6 +2167,7 @@ class PlayerActivity : BaseActivity() {
                     requestDanmakuSegmentsForPosition(seekTo, immediate = true)
                     scrubbing = false
                     keyScrubEndJob?.cancel()
+                    scheduleHideVideoShotPreviewAfterSeek()
                     setControlsVisible(true)
                     lifecycleScope.launch { reportProgressOnce(force = true, reason = "user_seek_end") }
                 }
@@ -3640,6 +3642,7 @@ class PlayerActivity : BaseActivity() {
         internal const val AUTO_NEXT_PREVIEW_WINDOW_MS = 5_000L
         internal const val AUTO_NEXT_TITLE_MAX_CHARS = 18
         internal const val SEEK_OSD_HIDE_DELAY_MS = 1_500L
+        internal const val VIDEOSHOT_PREVIEW_HIDE_AFTER_SEEK_MS = 500L
         internal const val AUTO_SKIP_START_WINDOW_MS = 1_000L
         internal const val AUTO_SKIP_DELAY_MS = 2_000L
         internal const val AUTO_RESUME_BACK_RESTART_WINDOW_MS = 3_000L

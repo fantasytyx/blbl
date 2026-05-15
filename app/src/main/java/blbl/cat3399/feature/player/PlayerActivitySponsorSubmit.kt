@@ -103,7 +103,7 @@ internal fun PlayerActivity.openSponsorSubmitPanel() {
     engine.pause()
     setControlsVisible(false)
     autoHideJob?.cancel()
-    binding.videoShotPreview.visibility = View.GONE
+    hideVideoShotPreviewNow()
     binding.sponsorSubmitScrim.visibility = View.VISIBLE
     binding.sponsorSubmitPanel.visibility = View.VISIBLE
     binding.sponsorSubmitTimeline.post { focusSponsorSubmitTimeline() }

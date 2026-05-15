@@ -188,6 +188,7 @@ private class VodPlayerTouchHost(
                 durationMs = durationMs,
                 bufferedPosMs = engine.bufferedPosition.coerceAtLeast(0L),
             )
+            playerActivity.scheduleHideVideoShotPreviewAfterSeek()
         } else if (!commit) {
             playerActivity.showSeekOsd()
         }

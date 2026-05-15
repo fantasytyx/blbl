@@ -152,7 +152,7 @@ internal object PlayerUiMode {
             }
 
             if (prefSize == AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF) {
-                binding.videoShotPreview.visibility = View.GONE
+                (activity as? PlayerActivity)?.hideVideoShotPreviewNow()
             }
         }
 

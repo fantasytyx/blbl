@@ -299,7 +299,7 @@ internal fun PlayerActivity.resetPlaybackStateForNewMedia(
     currentVideoContentHeight = null
     binding.videoShotPreview.spriteFrame = null
     binding.videoShotPreview.resetContentAspectRatio()
-    binding.videoShotPreview.visibility = View.GONE
+    hideVideoShotPreviewNow()
 
     binding.settingsPanel.visibility = View.GONE
     binding.commentsPanel.visibility = View.GONE

@@ -67,8 +67,7 @@ internal fun PlayerActivity.setControlsVisible(visible: Boolean) {
     if (show) {
         applyBottomBarFullLayout()
     } else {
-        binding.videoShotPreview.visibility = View.GONE
-        videoShotFetchJob?.cancel()
+        hideVideoShotPreviewNow()
     }
     syncPlayerInfoPanelVisibility()
     updatePersistentBottomProgressBarVisibility()
@@ -145,8 +144,7 @@ internal fun PlayerActivity.showSeekOsd(posMs: Long, durationMs: Long, bufferedP
 
             // === 新增：在 Full 模式下更新并显示缩略图，跟随主进度条 ===
             if (hasVideoShot) {
-                binding.videoShotPreview.visibility = View.VISIBLE
-                updateVideoShotPreview(pNow, PlayerActivity.SEEK_MAX, pos, binding.seekProgress)
+                showVideoShotPreviewForSeek(pNow, PlayerActivity.SEEK_MAX, pos, binding.seekProgress)
             }
         }
         noteUserInteraction()
@@ -168,13 +166,12 @@ internal fun PlayerActivity.showSeekOsd(posMs: Long, durationMs: Long, bufferedP
 
         // === 新增：在瞬时 OSD 模式下更新并显示缩略图，跟随瞬时进度条 ===
         if (hasVideoShot) {
-            binding.videoShotPreview.visibility = View.VISIBLE
-            updateVideoShotPreview(pNow, PlayerActivity.SEEK_MAX, pos, binding.progressSeekOsd)
+            showVideoShotPreviewForSeek(pNow, PlayerActivity.SEEK_MAX, pos, binding.progressSeekOsd)
         }
     } else {
         binding.progressSeekOsd.secondaryProgress = 0
         binding.progressSeekOsd.progress = 0
-        binding.videoShotPreview.visibility = View.GONE
+        hideVideoShotPreviewNow()
     }
 
     transientSeekOsdVisible = true
@@ -207,11 +204,43 @@ internal fun PlayerActivity.scheduleHideSeekOsd() {
             if (seekOsdToken != token) return@launch
             transientSeekOsdVisible = false
 
-            binding.videoShotPreview.visibility = View.GONE
-            videoShotFetchJob?.cancel() // 及时取消异步请求
+            hideVideoShotPreviewNow()
 
             updatePersistentBottomProgressBarVisibility()
         }
+}
+
+internal fun PlayerActivity.cancelVideoShotPreviewHide() {
+    videoShotPreviewHideJob?.cancel()
+    videoShotPreviewHideJob = null
+}
+
+internal fun PlayerActivity.hideVideoShotPreviewNow() {
+    cancelVideoShotPreviewHide()
+    binding.videoShotPreview.visibility = View.GONE
+    videoShotFetchJob?.cancel()
+}
+
+internal fun PlayerActivity.scheduleHideVideoShotPreviewAfterSeek() {
+    videoShotPreviewHideJob?.cancel()
+    videoShotPreviewHideJob =
+        lifecycleScope.launch {
+            delay(PlayerActivity.VIDEOSHOT_PREVIEW_HIDE_AFTER_SEEK_MS)
+            binding.videoShotPreview.visibility = View.GONE
+            videoShotFetchJob?.cancel()
+            videoShotPreviewHideJob = null
+        }
+}
+
+internal fun PlayerActivity.showVideoShotPreviewForSeek(
+    progress: Int,
+    max: Int,
+    positionMs: Long,
+    trackView: View,
+) {
+    cancelVideoShotPreviewHide()
+    binding.videoShotPreview.visibility = View.VISIBLE
+    updateVideoShotPreview(progress, max, positionMs, trackView)
 }
 
 internal fun PlayerActivity.updatePersistentBottomProgressBarVisibility() {
@@ -272,6 +301,7 @@ private fun PlayerActivity.commitDeferredKeySeekPreview() {
         val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
         if (duration > 0L) {
             showSeekOsd(posMs = pendingSeekTo, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
+            scheduleHideVideoShotPreviewAfterSeek()
         }
     }
 
@@ -611,7 +641,10 @@ internal fun PlayerActivity.stopHoldSeek() {
         if (scrubTarget != null) {
             engine.seekTo(scrubTarget)
             val duration = engine.duration.takeIf { it > 0 } ?: currentViewDurationMs ?: 0L
-            if (duration > 0L) showSeekOsd(posMs = scrubTarget, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
+            if (duration > 0L) {
+                showSeekOsd(posMs = scrubTarget, durationMs = duration, bufferedPosMs = engine.bufferedPosition)
+                scheduleHideVideoShotPreviewAfterSeek()
+            }
         }
         engine.playWhenReady = holdPrevPlayWhenReady
         val pos = (scrubTarget ?: engine.currentPosition).coerceAtLeast(0L)
@@ -773,8 +806,7 @@ internal fun PlayerActivity.updateVideoShotPreview(
     trackView: View // 传入当前正在使用的进度条控件
 ) {
     if (BiliClient.prefs.playerVideoShotPreviewSize == AppPrefs.PLAYER_VIDEOSHOT_PREVIEW_SIZE_OFF) {
-        binding.videoShotPreview.visibility = View.GONE
-        videoShotFetchJob?.cancel()
+        hideVideoShotPreviewNow()
         return
     }
 
