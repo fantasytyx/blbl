@@ -31,6 +31,7 @@ import blbl.cat3399.core.api.video.VideoTagsRequest
 import blbl.cat3399.core.api.video.UgcSeasonArchivesPage
 import blbl.cat3399.core.api.video.UgcSeasonArchivesRequest
 import blbl.cat3399.core.log.AppLog
+import blbl.cat3399.core.net.WbiSigner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -194,44 +195,74 @@ internal class WebVideoApi(
     }
 
     override suspend fun playerInfo(request: VideoPlayerInfoRequest): VideoPlayerInfo {
-        transport.ensurePgcPlayCookieMaintenance()
+        transport.ensureUgcPlayCookieMaintenance()
         val params =
             mutableMapOf(
                 "bvid" to request.bvid.trim(),
                 "cid" to request.cid.toString(),
             )
+        transport.cookieValue("x-bili-gaia-vtoken")?.trim()?.takeIf { it.isNotBlank() }?.let {
+            params["gaia_vtoken"] = it
+        }
         val keys = transport.ensureWbiKeys()
-        val url = transport.signedWbiUrl(path = "/x/player/wbi/v2", params = params, keys = keys)
-        var usedTryLookFallback = false
+        var fallback = "none"
         val json =
             try {
-                transport.getJson(
-                    url = url,
-                    headers = transport.webHeaders(targetUrl = url, includeCookie = true),
-                    noCookies = true,
-                )
+                requestPlayerInfoWbi(params = params, keys = keys)
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                usedTryLookFallback = true
-                AppLog.w(TAG, "playerInfo primary failed, fallback try_look bvid=${request.bvid} cid=${request.cid}", t)
-                params["try_look"] = "1"
-                val fallbackUrl = transport.signedWbiUrl(path = "/x/player/wbi/v2", params = params, keys = keys)
-                transport.getJson(
-                    url = fallbackUrl,
-                    headers = transport.webHeaders(targetUrl = fallbackUrl, includeCookie = false),
-                    noCookies = true,
-                )
+                AppLog.w(TAG, "playerInfo wbi failed, fallback plain_v2 bvid=${request.bvid} cid=${request.cid}", t)
+                fallback = "plain_v2"
+                try {
+                    requestPlayerInfoPlain(params = params)
+                } catch (plainError: Throwable) {
+                    if (plainError is CancellationException) throw plainError
+                    AppLog.w(TAG, "playerInfo plain_v2 failed bvid=${request.bvid} cid=${request.cid}", plainError)
+                    throw plainError
+                }
             }
-        checkApiCode(json)
         val data = json.optJSONObject("data") ?: JSONObject()
         val subtitleCount = data.optJSONObject("subtitle")?.optJSONArray("subtitles")?.length() ?: 0
         AppLog.i(
             TAG,
-            "playerInfo subtitle bvid=${request.bvid} cid=${request.cid} fallback=$usedTryLookFallback " +
+            "playerInfo subtitle bvid=${request.bvid} cid=${request.cid} fallback=$fallback " +
                 "needLogin=${data.optBoolean("need_login_subtitle", false)} count=$subtitleCount",
         )
         return withContext(Dispatchers.Default) { mapper.parsePlayerInfo(data = data, request = request) }
     }
+
+    private suspend fun requestPlayerInfoWbi(
+        params: Map<String, String>,
+        keys: WbiSigner.Keys,
+    ): JSONObject {
+        val url = transport.signedWbiUrl(path = "/x/player/wbi/v2", params = params, keys = keys)
+        val json =
+            transport.getJson(
+                url = url,
+                headers = playerInfoHeaders(url),
+                noCookies = true,
+            )
+        checkApiCode(json)
+        return json
+    }
+
+    private suspend fun requestPlayerInfoPlain(params: Map<String, String>): JSONObject {
+        val url = transport.withQuery("https://api.bilibili.com/x/player/v2", params)
+        val json =
+            transport.getJson(
+                url = url,
+                headers = playerInfoHeaders(url),
+                noCookies = true,
+            )
+        checkApiCode(json)
+        return json
+    }
+
+    private fun playerInfoHeaders(targetUrl: String): Map<String, String> =
+        transport.webHeaders(targetUrl = targetUrl, includeCookie = true).toMutableMap().apply {
+            // Player info is a Web CORS API; without Origin it may 412 or return subtitle entries with empty URLs.
+            this["Origin"] = PLAYER_INFO_ORIGIN
+        }
 
     override suspend fun onlineStatus(request: VideoOnlineStatusRequest): VideoOnlineStatus {
         val url =
@@ -485,5 +516,6 @@ internal class WebVideoApi(
 
     companion object {
         private const val TAG = "WebVideoApi"
+        private const val PLAYER_INFO_ORIGIN = "https://www.bilibili.com"
     }
 }
